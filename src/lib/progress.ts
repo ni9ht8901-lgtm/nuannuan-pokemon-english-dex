@@ -114,7 +114,11 @@ export const typeLabel = {
   normal: "Normal",
   fighting: "Fighting",
   ghost: "Ghost",
-  dragon: "Dragon"
+  dragon: "Dragon",
+  poison: "Poison",
+  flying: "Flying",
+  psychic: "Psychic",
+  fairy: "Fairy"
 } as const;
 
 export const typeZhLabel = {
@@ -125,8 +129,18 @@ export const typeZhLabel = {
   normal: "一般系",
   fighting: "格斗系",
   ghost: "幽灵系",
-  dragon: "龙系"
+  dragon: "龙系",
+  poison: "毒系",
+  flying: "飞行系",
+  psychic: "超能力系",
+  fairy: "妖精系"
 } as const;
+
+export const getPokemonTypes = (pokemon: { type: keyof typeof typeLabel; types?: Array<keyof typeof typeLabel> }) =>
+  pokemon.types?.length ? pokemon.types : [pokemon.type];
+
+export const getPrimaryType = (pokemon: { type: keyof typeof typeLabel; types?: Array<keyof typeof typeLabel> }) =>
+  getPokemonTypes(pokemon)[0];
 
 export const getPokemonStatus = (id: string, progress: UserProgress) => {
   if (progress.masteredPokemonIds.includes(id)) return "mastered";

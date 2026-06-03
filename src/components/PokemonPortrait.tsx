@@ -17,7 +17,11 @@ const typeGradient = {
   normal: "from-pink-200 via-rose-100 to-fuchsia-100",
   fighting: "from-red-300 via-orange-100 to-amber-100",
   ghost: "from-violet-400 via-purple-200 to-slate-200",
-  dragon: "from-indigo-300 via-sky-100 to-cyan-200"
+  dragon: "from-indigo-300 via-sky-100 to-cyan-200",
+  poison: "from-fuchsia-300 via-purple-100 to-pink-100",
+  flying: "from-cyan-200 via-sky-100 to-white",
+  psychic: "from-purple-300 via-fuchsia-100 to-pink-100",
+  fairy: "from-rose-200 via-pink-100 to-white"
 };
 
 export function PokemonPortrait({ pokemon, activeEffect, effectLabel, locked, onTap }: PokemonPortraitProps) {
@@ -179,6 +183,18 @@ function EffectOverlay({ effect, type }: { effect?: string; type: Pokemon["type"
     );
   }
 
+  if (effect.includes("psychic")) {
+    return (
+      <motion.div
+        className="pointer-events-none absolute inset-0 z-20 grid place-items-center text-6xl"
+        animate={{ scale: [0.5, 1.25, 0.75], rotate: [0, 180, 360], opacity: [0, 1, 0] }}
+        transition={{ duration: 1 }}
+      >
+        🌀
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       className="pointer-events-none absolute right-8 top-16 z-20 text-6xl"
@@ -198,6 +214,7 @@ function getImageAnimation(effect: string) {
   if (effect.includes("arm")) return { scale: [1, 1.12, 1], y: [0, -8, 0] };
   if (effect.includes("ghost")) return { y: [0, -20, 0], opacity: [1, 0.78, 1], scale: [1, 1.06, 1] };
   if (effect.includes("dragon")) return { y: [0, -18, 0], scale: [1, 1.08, 1] };
+  if (effect.includes("psychic")) return { y: [0, -16, 0], scale: [1, 1.1, 1], rotate: [-2, 2, -2] };
   if (effect.includes("tail") || effect.includes("wave")) return { rotate: [0, -7, 7, 0], scale: [1, 1.05, 1] };
   if (effect.includes("shell") || effect.includes("hide")) return { scale: [1, 0.86, 1], y: [0, 8, 0] };
   if (effect.includes("jump") || effect.includes("hop")) return { y: [0, -22, 0], scale: [1, 1.06, 1] };
@@ -212,5 +229,6 @@ function getEffectText(effect: string | undefined, type: Pokemon["type"]) {
   if (effect.includes("wing") || effect.includes("fly")) return "Fly!";
   if (effect.includes("jump") || effect.includes("hop")) return "Hop!";
   if (effect.includes("flower") || effect.includes("bud") || effect.includes("seed")) return "Bloom!";
+  if (effect.includes("psychic")) return "Mind power!";
   return type === "fire" ? "Flame!" : type === "water" ? "Splash!" : "Grow!";
 }

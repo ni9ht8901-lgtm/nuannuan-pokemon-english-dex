@@ -8,6 +8,8 @@ import {
   completePokemon,
   completeReview,
   evolvePokemon,
+  getPokemonTypes,
+  getPrimaryType,
   getPokemonStatus,
   getTodayPokemonIds,
   loadProgress,
@@ -38,7 +40,11 @@ const typeClass = {
   normal: "border-pink-200 bg-pink-50 text-pink-700",
   fighting: "border-red-200 bg-red-50 text-red-700",
   ghost: "border-violet-200 bg-violet-50 text-violet-700",
-  dragon: "border-indigo-200 bg-indigo-50 text-indigo-700"
+  dragon: "border-indigo-200 bg-indigo-50 text-indigo-700",
+  poison: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700",
+  flying: "border-cyan-200 bg-cyan-50 text-cyan-700",
+  psychic: "border-purple-200 bg-purple-50 text-purple-700",
+  fairy: "border-rose-200 bg-rose-50 text-rose-700"
 };
 
 registerSW({ immediate: true });
@@ -139,7 +145,10 @@ function BottomNav({ active, onSelect }: { active: Tab; onSelect: (tab: Tab) => 
             className={`rounded-2xl px-2 py-2 text-center text-xs font-black transition sm:text-sm ${
               active === tab.id ? "bg-sky-100 text-sky-700" : "text-slate-500"
             }`}
-            onClick={() => onSelect(tab.id)}
+            onClick={() => {
+              playUiClickSound();
+              onSelect(tab.id);
+            }}
             type="button"
           >
             <span className="block text-xl" aria-hidden>
@@ -228,6 +237,7 @@ function LearnPage({
   const nextPokemon = pokemonData.find((item) => item.id === nextEvolution);
 
   const triggerEffect = (nextEffect: string, label?: string, speechText?: string) => {
+    playPokemonSound(pokemon);
     setEffect(nextEffect);
     setEffectLabel(label);
     if (speechText) speak(speechText);
@@ -244,7 +254,14 @@ function LearnPage({
 
   return (
     <PageShell>
-      <button className="w-fit rounded-2xl bg-white px-4 py-2 font-black text-slate-600 shadow" onClick={onBack} type="button">
+      <button
+        className="w-fit rounded-2xl bg-white px-4 py-2 font-black text-slate-600 shadow"
+        onClick={() => {
+          playUiClickSound();
+          onBack();
+        }}
+        type="button"
+      >
         ← Back
       </button>
       <section className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
@@ -253,16 +270,24 @@ function LearnPage({
           <p className="mt-3 text-center text-sm font-bold text-slate-500">Tap me, words, or sentences!</p>
         </div>
         <div className="space-y-4">
-          <div className={`rounded-[28px] border-2 p-5 ${typeClass[pokemon.type]}`}>
+          <div className={`rounded-[28px] border-2 p-5 ${typeClass[getPrimaryType(pokemon)]}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-lg font-black">{pokemon.nameZh}</p>
                 <h1 className="text-4xl font-black text-slate-900">{pokemon.nameEn}</h1>
               </div>
-              <span className="rounded-full bg-white px-3 py-1 text-sm font-black">{typeLabel[pokemon.type]} · {typeZhLabel[pokemon.type]}</span>
+              <div className="flex flex-wrap gap-2">
+                {getPokemonTypes(pokemon).map((type) => (
+                  <span key={type} className="rounded-full bg-white px-3 py-1 text-sm font-black">
+                    {typeLabel[type]} · {typeZhLabel[type]}
+                  </span>
+                ))}
+              </div>
             </div>
             <p className="mt-4 text-lg font-bold leading-relaxed text-slate-700">{pokemon.storyZh}</p>
-            <p className="mt-3 text-sm font-black text-slate-500">Evolution: {pokemon.evolutionLine.map(idToName).join(" → ")}</p>
+            <div className="mt-3 rounded-2xl bg-white/70 px-3 py-2 text-sm font-black text-slate-600">
+              <p>{stageLabel(pokemon)} · Evolution: {pokemon.evolutionLine.map(idToName).join(" → ")}</p>
+            </div>
           </div>
 
           <LearningList
@@ -289,13 +314,23 @@ function LearnPage({
           />
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <button className="big-button bg-sky-500 text-white" onClick={onQuiz} type="button">
+            <button
+              className="big-button bg-sky-500 text-white"
+              onClick={() => {
+                playPokemonSound(pokemon);
+                onQuiz();
+              }}
+              type="button"
+            >
               Play Quiz
             </button>
             <button
               className={`big-button ${quizPassed && !completed ? "bg-emerald-500 text-white" : "bg-white text-slate-500"}`}
               disabled={!quizPassed || completed}
-              onClick={onComplete}
+              onClick={() => {
+                playRewardSound();
+                onComplete();
+              }}
               type="button"
             >
               {completed ? "Completed" : quizPassed ? "+1 Star" : "Finish Quiz First"}
@@ -380,6 +415,7 @@ function QuizPage({
 
   const choose = (option: string) => {
     if (option === quiz.answer) {
+      playPokemonSound(pokemon);
       setFeedback("great");
       setCorrect((value) => value + 1);
       window.setTimeout(() => {
@@ -387,6 +423,7 @@ function QuizPage({
         setIndex((value) => value + 1);
       }, 650);
     } else {
+      playWrongSound();
       setFeedback("try");
       window.setTimeout(() => setFeedback(undefined), 700);
     }
@@ -535,7 +572,10 @@ function PokemonCard({
       className={`rounded-[28px] border-2 bg-white p-3 text-left shadow-soft transition active:scale-[0.98] ${
         mastered ? "border-yellow-300" : locked ? "border-slate-200 opacity-70" : "border-white"
       }`}
-      onClick={onClick}
+      onClick={() => {
+        if (!locked) playPokemonSound(pokemon);
+        onClick();
+      }}
       type="button"
     >
       <PokemonPortrait pokemon={pokemon} locked={locked} />
@@ -544,8 +584,27 @@ function PokemonCard({
           <p className="text-sm font-black text-slate-500">{locked ? "???" : pokemon.nameZh}</p>
           <h3 className="text-xl font-black text-slate-900">{locked ? "Locked" : pokemon.nameEn}</h3>
           <p className="mt-1 text-xs font-black uppercase text-slate-400">{status}{completed ? " · today done" : ""}</p>
+          {!locked && (
+            <>
+              <p className="mt-1 text-sm font-black text-slate-600">{stageLabel(pokemon)}</p>
+              <p className="mt-1 line-clamp-2 text-xs font-bold text-slate-400">{pokemon.evolutionLine.map(idToName).join(" → ")}</p>
+            </>
+          )}
         </div>
-        <span className={`rounded-full border px-2 py-1 text-xs font-black ${typeClass[pokemon.type]}`}>{locked ? "?" : cta}</span>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {locked ? (
+            <span className={`rounded-full border px-2 py-1 text-xs font-black ${typeClass[getPrimaryType(pokemon)]}`}>?</span>
+          ) : (
+            <>
+              <span className={`rounded-full border px-2 py-1 text-xs font-black ${typeClass[getPrimaryType(pokemon)]}`}>{cta}</span>
+              {getPokemonTypes(pokemon).map((type) => (
+                <span key={type} className={`rounded-full border px-2 py-1 text-xs font-black ${typeClass[type]}`}>
+                  {typeLabel[type]}
+                </span>
+              ))}
+            </>
+          )}
+        </div>
       </div>
     </button>
   );
@@ -611,6 +670,13 @@ function idToName(id: string) {
   return pokemonData.find((pokemon) => pokemon.id === id)?.nameEn ?? id;
 }
 
+function stageLabel(pokemon: Pokemon) {
+  if (pokemon.evolutionLine.length === 1) return "原始形态 · 无进化";
+  if (pokemon.stage === 1) return "原始形态";
+  if (pokemon.stage >= pokemon.evolutionLine.length || pokemon.stage === 3) return "最终进化";
+  return `第 ${pokemon.stage} 阶进化`;
+}
+
 function iconForText(text: string, type: Pokemon["type"]) {
   const value = text.toLowerCase();
   if (value.includes("fire") || value.includes("hot")) return "🔥";
@@ -625,6 +691,7 @@ function iconForText(text: string, type: Pokemon["type"]) {
   if (value.includes("arm") || value.includes("muscle") || value.includes("power") || value.includes("lift")) return "💪";
   if (value.includes("ghost") || value.includes("shadow") || value.includes("hide") || value.includes("float")) return "👻";
   if (value.includes("pearl") || value.includes("glow")) return "✨";
+  if (value.includes("mind") || value.includes("mystery")) return "🌀";
   if (value.includes("claw")) return "⚡";
   if (value.includes("seed")) return "🌱";
   if (value.includes("leaf") || value.includes("green")) return "🍃";
@@ -651,6 +718,7 @@ function effectForText(text: string, pokemon: Pokemon) {
   if (value.includes("arm") || value.includes("muscle") || value.includes("power") || value.includes("lift") || value.includes("heavy") || value.includes("hand")) return pokemon.interactions.find((item) => item.includes("arm") || item.includes("body")) ?? pokemon.interactions[0];
   if (value.includes("ghost") || value.includes("shadow") || value.includes("float") || value.includes("hide") || value.includes("purple")) return pokemon.interactions.find((item) => item.includes("ghost") || item.includes("body")) ?? pokemon.interactions[0];
   if (value.includes("dragon") || value.includes("pearl") || value.includes("glow") || value.includes("long") || value.includes("kind") || value.includes("far")) return pokemon.interactions.find((item) => item.includes("dragon") || item.includes("wing")) ?? pokemon.interactions[0];
+  if (value.includes("mind") || value.includes("mystery")) return pokemon.interactions.find((item) => item.includes("psychic")) ?? pokemon.interactions[0];
   if (value.includes("seed") || value.includes("leaf") || value.includes("green") || value.includes("plant") || value.includes("grow")) {
     return pokemon.interactions.find((item) => item.includes("seed") || item.includes("leaf") || item.includes("bud") || item.includes("flower")) ?? pokemon.interactions[0];
   }
@@ -664,6 +732,85 @@ function sentenceHint(sentence: string) {
   if (sentence.includes("can")) return "Watch the action";
   if (sentence.includes("is")) return "Say the feeling or color";
   return "Tap to hear and move";
+}
+
+function playPokemonSound(pokemon: Pokemon) {
+  playTypeSound(getPrimaryType(pokemon));
+}
+
+function playUiClickSound() {
+  playTone([440, 660], 0.09, "triangle", 0.04);
+}
+
+function playRewardSound() {
+  playTone([523, 659, 784, 1046], 0.08, "triangle", 0.05);
+}
+
+function playWrongSound() {
+  playTone([220, 180], 0.12, "sawtooth", 0.035);
+}
+
+function playTypeSound(type: Pokemon["type"]) {
+  if (type === "water") return playNoise(0.18, 620, 0.055);
+  if (type === "fire") return playNoise(0.16, 240, 0.05);
+  if (type === "electric") return playTone([900, 1300, 700], 0.045, "square", 0.04);
+  if (type === "grass") return playTone([520, 760, 980], 0.07, "sine", 0.035);
+  if (type === "normal") return playTone([360, 520], 0.08, "triangle", 0.035);
+  if (type === "fighting") return playTone([150, 95], 0.11, "sine", 0.06);
+  if (type === "ghost") return playTone([420, 300, 240], 0.14, "sine", 0.03);
+  if (type === "dragon") return playTone([180, 360, 720], 0.11, "sawtooth", 0.035);
+  if (type === "poison") return playTone([260, 210, 300], 0.08, "sawtooth", 0.025);
+  if (type === "flying") return playNoise(0.14, 1200, 0.028);
+  if (type === "psychic") return playTone([660, 990, 1320, 880], 0.07, "sine", 0.035);
+  if (type === "fairy") return playTone([784, 988, 1175], 0.08, "triangle", 0.035);
+}
+
+function getAudioContext() {
+  const AudioContextCtor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextCtor) return null;
+  const globalWindow = window as unknown as { __nuannuanAudioContext?: AudioContext };
+  globalWindow.__nuannuanAudioContext ??= new AudioContextCtor();
+  return globalWindow.__nuannuanAudioContext;
+}
+
+function playTone(frequencies: number[], stepDuration: number, wave: OscillatorType, volume: number) {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  frequencies.forEach((frequency, index) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = wave;
+    osc.frequency.setValueAtTime(frequency, now + index * stepDuration);
+    gain.gain.setValueAtTime(0, now + index * stepDuration);
+    gain.gain.linearRampToValueAtTime(volume, now + index * stepDuration + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + (index + 1) * stepDuration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now + index * stepDuration);
+    osc.stop(now + (index + 1) * stepDuration + 0.02);
+  });
+}
+
+function playNoise(duration: number, filterFrequency: number, volume: number) {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const buffer = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * duration)), ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
+  const source = ctx.createBufferSource();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+  filter.type = "bandpass";
+  filter.frequency.value = filterFrequency;
+  gain.gain.setValueAtTime(volume, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+  source.buffer = buffer;
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  source.start();
+  source.stop(ctx.currentTime + duration);
 }
 
 function speak(text: string) {

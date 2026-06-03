@@ -7,7 +7,7 @@
 - React + Vite + TypeScript + Tailwind CSS
 - PWA，可在 iPhone / iPad Safari 添加到主屏幕
 - 无后台、无登录，学习进度保存在本机 `localStorage`
-- 30 只宝可梦官方 artwork，多条进化链
+- 31 只宝可梦官方 artwork，多条进化链
 - 支持 Web Speech API 英文朗读
 - 单词和句子会触发对应动效，例如 fire 喷火、water 水花、wing 飞起
 - 支持 GitHub Pages 部署

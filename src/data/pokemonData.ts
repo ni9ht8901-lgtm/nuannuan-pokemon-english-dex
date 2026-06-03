@@ -1,4 +1,16 @@
-export type PokemonType = "fire" | "water" | "grass" | "electric" | "normal" | "fighting" | "ghost" | "dragon";
+export type PokemonType =
+  | "fire"
+  | "water"
+  | "grass"
+  | "electric"
+  | "normal"
+  | "fighting"
+  | "ghost"
+  | "dragon"
+  | "poison"
+  | "flying"
+  | "psychic"
+  | "fairy";
 
 export type PokemonWord = {
   word: string;
@@ -16,6 +28,7 @@ export type Pokemon = {
   nameEn: string;
   nameZh: string;
   type: PokemonType;
+  types?: PokemonType[];
   stage: 1 | 2 | 3;
   evolutionLine: string[];
   image: string;
@@ -76,6 +89,7 @@ export const pokemonData: Pokemon[] = [
     nameEn: "Charizard",
     nameZh: "喷火龙",
     type: "fire",
+    types: ["fire", "flying"],
     stage: 3,
     evolutionLine: ["charmander", "charmeleon", "charizard"],
     image: "./pokemon/charizard.png",
@@ -160,6 +174,7 @@ export const pokemonData: Pokemon[] = [
     nameEn: "Bulbasaur",
     nameZh: "妙蛙种子",
     type: "grass",
+    types: ["grass", "poison"],
     stage: 1,
     evolutionLine: ["bulbasaur", "ivysaur", "venusaur"],
     image: "./pokemon/bulbasaur.png",
@@ -181,6 +196,7 @@ export const pokemonData: Pokemon[] = [
     nameEn: "Ivysaur",
     nameZh: "妙蛙草",
     type: "grass",
+    types: ["grass", "poison"],
     stage: 2,
     evolutionLine: ["bulbasaur", "ivysaur", "venusaur"],
     image: "./pokemon/ivysaur.png",
@@ -202,6 +218,7 @@ export const pokemonData: Pokemon[] = [
     nameEn: "Venusaur",
     nameZh: "妙蛙花",
     type: "grass",
+    types: ["grass", "poison"],
     stage: 3,
     evolutionLine: ["bulbasaur", "ivysaur", "venusaur"],
     image: "./pokemon/venusaur.png",
@@ -391,6 +408,7 @@ export const pokemonData: Pokemon[] = [
     nameEn: "Jigglypuff",
     nameZh: "胖丁",
     type: "normal",
+    types: ["normal", "fairy"],
     stage: 1,
     evolutionLine: ["jigglypuff", "wigglytuff"],
     image: "./pokemon/jigglypuff.png",
@@ -412,6 +430,7 @@ export const pokemonData: Pokemon[] = [
     nameEn: "Wigglytuff",
     nameZh: "胖可丁",
     type: "normal",
+    types: ["normal", "fairy"],
     stage: 2,
     evolutionLine: ["jigglypuff", "wigglytuff"],
     image: "./pokemon/wigglytuff.png",
@@ -538,6 +557,7 @@ export const pokemonData: Pokemon[] = [
     nameEn: "Gastly",
     nameZh: "鬼斯",
     type: "ghost",
+    types: ["ghost", "poison"],
     stage: 1,
     evolutionLine: ["gastly", "haunter", "gengar"],
     image: "./pokemon/gastly.png",
@@ -559,6 +579,7 @@ export const pokemonData: Pokemon[] = [
     nameEn: "Haunter",
     nameZh: "鬼斯通",
     type: "ghost",
+    types: ["ghost", "poison"],
     stage: 2,
     evolutionLine: ["gastly", "haunter", "gengar"],
     image: "./pokemon/haunter.png",
@@ -580,6 +601,7 @@ export const pokemonData: Pokemon[] = [
     nameEn: "Gengar",
     nameZh: "耿鬼",
     type: "ghost",
+    types: ["ghost", "poison"],
     stage: 3,
     evolutionLine: ["gastly", "haunter", "gengar"],
     image: "./pokemon/gengar.png",
@@ -643,6 +665,7 @@ export const pokemonData: Pokemon[] = [
     nameEn: "Dragonite",
     nameZh: "快龙",
     type: "dragon",
+    types: ["dragon", "flying"],
     stage: 3,
     evolutionLine: ["dratini", "dragonair", "dragonite"],
     image: "./pokemon/dragonite.png",
@@ -657,6 +680,27 @@ export const pokemonData: Pokemon[] = [
     quizzes: [
       { question: "Which word means 友善的？", options: ["kind", "angry", "heavy"], answer: "kind" },
       { question: "Fill in: It can ____.", options: ["fly", "sing", "hide"], answer: "fly" }
+    ]
+  },
+  {
+    id: "mewtwo",
+    nameEn: "Mewtwo",
+    nameZh: "超梦",
+    type: "psychic",
+    stage: 1,
+    evolutionLine: ["mewtwo"],
+    image: "./pokemon/mewtwo.png",
+    storyZh: "超梦很神秘，也很强大。它会用想法移动东西。",
+    words: [
+      { word: "mind", meaning: "思想" },
+      { word: "power", meaning: "力量" },
+      { word: "mystery", meaning: "神秘" }
+    ],
+    sentences: ["Mewtwo has power.", "It is a mystery.", "It can use its mind."],
+    interactions: ["tap-psychic-wave", "tap-body-float"],
+    quizzes: [
+      { question: "Which word means 思想？", options: ["mind", "water", "coin"], answer: "mind" },
+      { question: "Fill in: Mewtwo has ____.", options: ["power", "fur", "shell"], answer: "power" }
     ]
   }
 ];
