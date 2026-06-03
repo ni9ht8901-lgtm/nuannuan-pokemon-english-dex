@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: #fff7ed;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
+  font-family: ui-rounded, "Avenir Next", "PingFang SC", system-ui, sans-serif;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer components {
+  .big-button {
+    min-height: 56px;
+    border-radius: 22px;
+    padding: 0.9rem 1rem;
+    text-align: center;
+    font-size: 1.05rem;
+    font-weight: 900;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.1);
+    transition: transform 160ms ease, opacity 160ms ease;
+  }
+
+  .big-button:active {
+    transform: scale(0.98);
+  }
+
+  .big-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+    box-shadow: none;
+  }
+}
