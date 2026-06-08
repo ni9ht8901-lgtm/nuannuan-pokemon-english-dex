@@ -8,6 +8,7 @@ import {
   completePokemon,
   completeReview,
   evolvePokemon,
+  getEvolutionOptionIds,
   getPokemonTypes,
   getPrimaryType,
   getPokemonStatus,
@@ -93,7 +94,7 @@ export function App() {
               onBack={() => navigate({ tab: route.tab })}
               onQuiz={() => navigate({ tab: route.tab, quizPokemonId: selectedPokemon.id })}
               onComplete={() => updateProgress(completePokemon(selectedPokemon.id, progress))}
-              onEvolve={() => updateProgress(evolvePokemon(selectedPokemon.id, progress))}
+              onEvolve={(targetId) => updateProgress(evolvePokemon(selectedPokemon.id, progress, targetId))}
             />
           ) : route.tab === "dex" ? (
             <DexPage key="dex" progress={progress} onOpen={(id) => navigate({ tab: "dex", pokemonId: id })} />
@@ -174,7 +175,7 @@ function AdventurePage({ progress, onOpen }: { progress: UserProgress; onOpen: (
       <section className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-black uppercase tracking-[0.14em] text-sky-700">Today&apos;s Adventure</p>
-          <h1 className="mt-2 text-3xl font-black leading-tight text-slate-900 sm:text-5xl">今天认识 3 只宝可梦吧！</h1>
+          <h1 className="mt-2 text-3xl font-black leading-tight text-slate-900 sm:text-5xl">今天随机解锁 3 只原始宝可梦！</h1>
         </div>
         <ProgressRing value={Math.min(completed, DAILY_LEARNING_COUNT)} total={DAILY_LEARNING_COUNT} />
       </section>
@@ -193,7 +194,7 @@ function AdventurePage({ progress, onOpen }: { progress: UserProgress; onOpen: (
         >
           <div className="text-4xl">🍬</div>
           <h2 className="mt-2 text-2xl font-black text-yellow-800">今日打卡成功！</h2>
-          <p className="mt-1 font-bold text-yellow-700">Great job! You got a Candy.</p>
+          <p className="mt-1 font-bold text-yellow-700">Great job! Stars turn into Candy automatically.</p>
         </motion.section>
       )}
 
@@ -225,16 +226,19 @@ function LearnPage({
   onBack: () => void;
   onQuiz: () => void;
   onComplete: () => void;
-  onEvolve: () => void;
+  onEvolve: (targetId?: string) => void;
 }) {
   const [effect, setEffect] = useState<string>();
   const [effectLabel, setEffectLabel] = useState<string>();
+  const [evolving, setEvolving] = useState(false);
   const quizPassed = progress.quizPassedPokemonIds.includes(pokemon.id);
   const completed = progress.completedTodayPokemonIds.includes(pokemon.id);
   const locked = !progress.unlockedPokemonIds.includes(pokemon.id);
   const evolutionReady = canEvolve(pokemon.id, progress);
-  const nextEvolution = pokemon.evolutionLine[pokemon.stage];
-  const nextPokemon = pokemonData.find((item) => item.id === nextEvolution);
+  const evolutionOptions = getEvolutionOptionIds(pokemon.id)
+    .filter((id) => !progress.unlockedPokemonIds.includes(id))
+    .map((id) => pokemonData.find((item) => item.id === id))
+    .filter((item): item is Pokemon => Boolean(item));
 
   const triggerEffect = (nextEffect: string, label?: string, speechText?: string) => {
     playPokemonSound(pokemon);
@@ -250,6 +254,21 @@ function LearnPage({
   const tapPokemon = () => {
     const nextEffect = pokemon.interactions[Math.floor(Math.random() * pokemon.interactions.length)];
     triggerEffect(nextEffect);
+  };
+
+  const handleEvolve = (targetPokemon: Pokemon) => {
+    if (evolving) return;
+    setEvolving(true);
+    playPokemonSound(targetPokemon);
+    playRewardSound();
+    setEffect("tap-evolve-flash");
+    setEffectLabel("Evolve!");
+    window.setTimeout(() => {
+      onEvolve(targetPokemon.id);
+      setEvolving(false);
+      setEffect(undefined);
+      setEffectLabel(undefined);
+    }, 950);
   };
 
   return (
@@ -268,6 +287,19 @@ function LearnPage({
         <div>
           <PokemonPortrait pokemon={pokemon} activeEffect={effect} effectLabel={effectLabel} locked={locked} onTap={tapPokemon} />
           <p className="mt-3 text-center text-sm font-bold text-slate-500">Tap me, words, or sentences!</p>
+          {evolving && (
+            <motion.div
+              className="pointer-events-none fixed inset-0 z-40 grid place-items-center bg-white/80 text-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: [0, 1, 0.92, 0] }}
+              transition={{ duration: 0.95 }}
+            >
+              <motion.div animate={{ scale: [0.5, 1.2, 1] }} className="rounded-[32px] bg-yellow-100 px-8 py-6 shadow-soft">
+                <div className="text-6xl">🍬</div>
+                <p className="mt-2 text-2xl font-black text-yellow-900">{pokemon.nameEn} evolves!</p>
+              </motion.div>
+            </motion.div>
+          )}
         </div>
         <div className="space-y-4">
           <div className={`rounded-[28px] border-2 p-5 ${typeClass[getPrimaryType(pokemon)]}`}>
@@ -333,24 +365,38 @@ function LearnPage({
               }}
               type="button"
             >
-              {completed ? "Completed" : quizPassed ? "+1 Star" : "Finish Quiz First"}
+              {completed ? "Completed" : quizPassed ? "+1 Star · auto Candy" : "Finish Quiz First"}
             </button>
           </div>
 
-          {evolutionReady && nextPokemon && (
-            <motion.button
-              className="w-full rounded-[28px] border-2 border-yellow-200 bg-yellow-100 p-5 text-left shadow-soft"
-              onClick={onEvolve}
-              type="button"
-              animate={{ boxShadow: ["0 0 0 rgba(250,204,21,0)", "0 0 30px rgba(250,204,21,0.7)", "0 0 0 rgba(250,204,21,0)"] }}
-              transition={{ duration: 1.4, repeat: Infinity }}
-            >
+          {evolutionReady && evolutionOptions.length > 0 && (
+            <section className="rounded-[28px] border-2 border-yellow-200 bg-yellow-100 p-4 shadow-soft">
               <p className="text-sm font-black uppercase tracking-[0.12em] text-yellow-700">Ready to evolve</p>
-              <p className="mt-1 text-xl font-black text-slate-900">
-                {pokemon.nameEn} evolved into {nextPokemon.nameEn}!
-              </p>
-              <p className="font-bold text-yellow-800">Tap to use {pokemon.stage === 1 ? 2 : 3} Candy.</p>
-            </motion.button>
+              <h2 className="mt-1 text-xl font-black text-slate-900">选择进化方向</h2>
+              <p className="font-bold text-yellow-800">Use {pokemon.stage === 1 ? 2 : 3} Candy. Tap one evolved Pokémon.</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {evolutionOptions.map((targetPokemon) => (
+                  <motion.button
+                    key={targetPokemon.id}
+                    className="rounded-3xl bg-white p-3 text-left shadow transition active:scale-[0.98]"
+                    onClick={() => handleEvolve(targetPokemon)}
+                    type="button"
+                    animate={{ boxShadow: ["0 0 0 rgba(250,204,21,0)", "0 0 24px rgba(250,204,21,0.55)", "0 0 0 rgba(250,204,21,0)"] }}
+                    transition={{ duration: 1.4, repeat: Infinity }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-yellow-50">
+                        <PokemonPortrait pokemon={targetPokemon} />
+                      </div>
+                      <div>
+                        <p className="font-black text-slate-900">{targetPokemon.nameEn}</p>
+                        <p className="text-sm font-bold text-slate-500">{targetPokemon.nameZh}</p>
+                      </div>
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
+            </section>
           )}
         </div>
       </section>
@@ -395,6 +441,12 @@ function LearningList({ title, items, onPlay }: { title: string; items: Learning
   );
 }
 
+type QuizItem = {
+  question: string;
+  options: string[];
+  answer: string;
+};
+
 function QuizPage({
   pokemon,
   progress,
@@ -409,12 +461,13 @@ function QuizPage({
   const [index, setIndex] = useState(0);
   const [feedback, setFeedback] = useState<"great" | "try" | undefined>();
   const [correct, setCorrect] = useState(0);
-  const quiz = pokemon.quizzes[index];
-  const completed = index >= pokemon.quizzes.length;
+  const quizSet = useMemo(() => buildQuizSet(pokemon), [pokemon.id]);
+  const quiz = quizSet[index];
+  const completed = index >= quizSet.length;
   const alreadyPassed = progress.quizPassedPokemonIds.includes(pokemon.id);
 
   const choose = (option: string) => {
-    if (option === quiz.answer) {
+    if (quiz && option === quiz.answer) {
       playPokemonSound(pokemon);
       setFeedback("great");
       setCorrect((value) => value + 1);
@@ -430,8 +483,8 @@ function QuizPage({
   };
 
   useEffect(() => {
-    if (completed && !alreadyPassed) onPass(correct, pokemon.quizzes.length);
-  }, [alreadyPassed, completed, correct, onPass, pokemon.quizzes.length]);
+    if (completed && !alreadyPassed) onPass(correct, quizSet.length);
+  }, [alreadyPassed, completed, correct, onPass, quizSet.length]);
 
   if (completed) {
     return (
@@ -439,7 +492,7 @@ function QuizPage({
         <section className="mx-auto max-w-md rounded-[32px] bg-white p-6 text-center shadow-soft">
           <div className="text-6xl">⭐</div>
           <h1 className="mt-3 text-3xl font-black text-slate-900">Great!</h1>
-          <p className="mt-2 text-lg font-bold text-slate-600">{pokemon.nameEn} quiz is done. Now you can get a Star.</p>
+          <p className="mt-2 text-lg font-bold text-slate-600">{pokemon.nameEn} quiz is done. Claim a Star. Stars turn into Candy automatically.</p>
           <button className="big-button mt-5 w-full bg-emerald-500 text-white" onClick={onDone} type="button">
             Back to Learn
           </button>
@@ -456,7 +509,7 @@ function QuizPage({
             <PokemonPortrait pokemon={pokemon} />
           </div>
           <div>
-            <p className="text-sm font-black text-sky-700">Quiz {index + 1}/{pokemon.quizzes.length}</p>
+            <p className="text-sm font-black text-sky-700">Quiz {index + 1}/{quizSet.length}</p>
             <h1 className="text-2xl font-black text-slate-900">{quiz.question}</h1>
           </div>
         </div>
@@ -498,13 +551,15 @@ function ReviewPage({
   onOpen: (id: string) => void;
   onReviewComplete: (ids: string[]) => void;
 }) {
-  const learned = pokemonData.filter((pokemon) => progress.learnedPokemonIds.includes(pokemon.id));
-  const reviewSet = useMemo(() => learned.slice().sort(() => 0.5 - Math.random()).slice(0, 3), [progress.learnedPokemonIds.join("|")]);
+  const reviewPool = pokemonData.filter(
+    (pokemon) => progress.learnedPokemonIds.includes(pokemon.id) || (pokemon.stage > 1 && progress.unlockedPokemonIds.includes(pokemon.id))
+  );
+  const reviewSet = useMemo(() => shuffleList(reviewPool).slice(0, 3), [reviewPool.map((pokemon) => pokemon.id).join("|")]);
 
   return (
     <PageShell>
-      <Header eyebrow="Review" title="轻松复习" subtitle="从已学宝可梦里抽 3 个复习。完成后可以获得 1 颗星星。" />
-      {learned.length === 0 ? (
+      <Header eyebrow="Review" title="轻松复习" subtitle="复习包含已学原始宝可梦和已经进化出的宝可梦。完成后获得星星，自动兑换糖果。" />
+      {reviewPool.length === 0 ? (
         <EmptyState title="还没有可复习内容" text="先完成今日冒险里的任意一只宝可梦吧。" />
       ) : (
         <>
@@ -518,7 +573,7 @@ function ReviewPage({
             onClick={() => onReviewComplete(reviewSet.map((pokemon) => pokemon.id))}
             type="button"
           >
-            Review Done · +1 Star
+            Review Done · +1 Star · auto Candy
           </button>
         </>
       )}
@@ -529,7 +584,7 @@ function ReviewPage({
 function RewardsPage({ progress, onOpenDex }: { progress: UserProgress; onOpenDex: () => void }) {
   return (
     <PageShell>
-      <Header eyebrow="Rewards" title="奖励背包" subtitle="星星来自学习和复习，糖果可以用来进化。" />
+      <Header eyebrow="Rewards" title="奖励背包" subtitle="星星来自学习和复习，每 3 颗星星会自动换成 1 颗糖果。" />
       <section className="grid grid-cols-2 gap-4">
         <Reward value={progress.stars} label="Stars" icon="⭐" />
         <Reward value={progress.candies} label="Candy" icon="🍬" />
@@ -732,6 +787,55 @@ function sentenceHint(sentence: string) {
   if (sentence.includes("can")) return "Watch the action";
   if (sentence.includes("is")) return "Say the feeling or color";
   return "Tap to hear and move";
+}
+
+function buildQuizSet(pokemon: Pokemon): QuizItem[] {
+  const wordQuestions: QuizItem[] = pokemon.words.map((word) => ({
+    question: `Which word means ${word.meaning}？`,
+    answer: word.word,
+    options: buildOptions(word.word, pokemon.words.map((item) => item.word))
+  }));
+  const sentenceQuestions: QuizItem[] = pokemon.sentences.map((sentence) => {
+    const answer = pickSentenceAnswer(sentence, pokemon);
+    return {
+      question: `Fill in: ${sentence.replace(answer, "____")}`,
+      answer,
+      options: buildOptions(answer, pokemon.words.map((item) => item.word))
+    };
+  });
+  const providedQuestions: QuizItem[] = pokemon.quizzes.map((quiz) => ({
+    ...quiz,
+    options: shuffleList(quiz.options)
+  }));
+
+  return shuffleList([...providedQuestions, ...wordQuestions, ...sentenceQuestions]).slice(0, 3);
+}
+
+function pickSentenceAnswer(sentence: string, pokemon: Pokemon) {
+  const lowerSentence = sentence.toLowerCase();
+  return pokemon.words.find((word) => lowerSentence.includes(word.word.toLowerCase()))?.word ?? pokemon.nameEn;
+}
+
+function buildOptions(answer: string, localWords: string[]) {
+  const optionPool = Array.from(
+    new Set([
+      ...localWords,
+      ...pokemonData.flatMap((pokemon) => pokemon.words.map((word) => word.word)),
+      "run",
+      "jump",
+      "sleep",
+      "friend",
+      "star"
+    ])
+  ).filter((option) => option !== answer);
+  return shuffleList([answer, ...shuffleList(optionPool).slice(0, 2)]);
+}
+
+function shuffleList<T>(items: T[]) {
+  return items
+    .map((item) => ({ item, sort: Math.random() }))
+    .sort((a, b) => a.sort - b.sort)
+    .map(({ item }) => item);
 }
 
 function playPokemonSound(pokemon: Pokemon) {

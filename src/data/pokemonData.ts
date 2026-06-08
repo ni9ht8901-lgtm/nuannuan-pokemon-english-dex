@@ -31,6 +31,7 @@ export type Pokemon = {
   types?: PokemonType[];
   stage: 1 | 2 | 3;
   evolutionLine: string[];
+  evolvesTo?: string[];
   image: string;
   storyZh: string;
   words: PokemonWord[];
@@ -284,6 +285,7 @@ export const pokemonData: Pokemon[] = [
     type: "normal",
     stage: 1,
     evolutionLine: ["eevee", "vaporeon", "jolteon", "flareon"],
+    evolvesTo: ["vaporeon", "jolteon", "flareon"],
     image: "./pokemon/eevee.png",
     storyZh: "伊布毛茸茸的，很会变成不同样子的宝可梦。",
     words: [

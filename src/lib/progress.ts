@@ -13,6 +13,8 @@ export type UserProgress = {
   streakDays: number;
   stars: number;
   candies: number;
+  todayPokemonIds: string[];
+  todayPokemonDate: string;
   completedTodayPokemonIds: string[];
   unlockedPokemonIds: string[];
   learnedPokemonIds: string[];
@@ -25,6 +27,7 @@ export type UserProgress = {
 
 const STORAGE_KEY = "nuannuan-pokemon-progress-v1";
 const starterIds = ["charmander", "squirtle", "bulbasaur"];
+const STARS_PER_CANDY = 3;
 
 const todayString = () => new Date().toISOString().slice(0, 10);
 
@@ -41,8 +44,10 @@ export const createInitialProgress = (): UserProgress => ({
   streakDays: 0,
   stars: 0,
   candies: 0,
+  todayPokemonIds: [],
+  todayPokemonDate: "",
   completedTodayPokemonIds: [],
-  unlockedPokemonIds: starterIds,
+  unlockedPokemonIds: [],
   learnedPokemonIds: [],
   masteredPokemonIds: [],
   quizPassedPokemonIds: [],
@@ -56,6 +61,8 @@ const normalizeProgress = (raw: Partial<UserProgress>): UserProgress => {
   return {
     ...initial,
     ...raw,
+    todayPokemonIds: raw.todayPokemonIds ?? initial.todayPokemonIds,
+    todayPokemonDate: raw.todayPokemonDate ?? initial.todayPokemonDate,
     completedTodayPokemonIds: raw.completedTodayPokemonIds ?? initial.completedTodayPokemonIds,
     unlockedPokemonIds: raw.unlockedPokemonIds ?? initial.unlockedPokemonIds,
     learnedPokemonIds: raw.learnedPokemonIds ?? initial.learnedPokemonIds,
@@ -85,25 +92,29 @@ export const saveProgress = (progress: UserProgress) => {
 
 export const applyDailyReset = (progress: UserProgress): UserProgress => {
   const today = todayString();
-  if (progress.lastVisitDate === today) return progress;
+  if (progress.lastVisitDate === today && progress.todayPokemonDate === today && progress.todayPokemonIds.length === DAILY_LEARNING_COUNT) {
+    return progress;
+  }
 
-  const keptStreak = isYesterday(progress.lastCompletedDate, today) ? progress.streakDays : 0;
+  const keptStreak = progress.lastCompletedDate === today || isYesterday(progress.lastCompletedDate, today) ? progress.streakDays : 0;
+  const todayPokemonIds = chooseTodayBasePokemonIds(progress, today);
   const next = {
     ...progress,
     lastVisitDate: today,
     streakDays: keptStreak,
+    todayPokemonIds,
+    todayPokemonDate: today,
     completedTodayPokemonIds: [],
-    quizPassedPokemonIds: []
+    quizPassedPokemonIds: [],
+    unlockedPokemonIds: Array.from(new Set([...progress.unlockedPokemonIds, ...todayPokemonIds]))
   };
   saveProgress(next);
   return next;
 };
 
 export const getTodayPokemonIds = (progress: UserProgress) => {
-  const unlocked = pokemonData.filter((pokemon) => progress.unlockedPokemonIds.includes(pokemon.id));
-  const notLearned = unlocked.filter((pokemon) => !progress.learnedPokemonIds.includes(pokemon.id));
-  const learned = unlocked.filter((pokemon) => progress.learnedPokemonIds.includes(pokemon.id));
-  return [...notLearned, ...learned].slice(0, DAILY_LEARNING_COUNT).map((pokemon) => pokemon.id);
+  if (progress.todayPokemonIds.length === DAILY_LEARNING_COUNT) return progress.todayPokemonIds;
+  return chooseTodayBasePokemonIds(progress, todayString());
 };
 
 export const typeLabel = {
@@ -153,17 +164,19 @@ export const canEvolve = (id: string, progress: UserProgress) => {
   const pokemon = pokemonData.find((item) => item.id === id);
   if (!pokemon || pokemon.stage === 3 || !progress.learnedPokemonIds.includes(id)) return false;
 
-  const nextId = pokemon.evolutionLine[pokemon.stage];
-  if (progress.unlockedPokemonIds.includes(nextId)) return false;
+  const nextIds = getEvolutionOptionIds(id).filter((nextId) => !progress.unlockedPokemonIds.includes(nextId));
+  if (nextIds.length === 0) return false;
 
   return progress.candies >= (pokemon.stage === 1 ? 2 : 3);
 };
 
-export const evolvePokemon = (id: string, progress: UserProgress): UserProgress => {
+export const evolvePokemon = (id: string, progress: UserProgress, targetId?: string): UserProgress => {
   const pokemon = pokemonData.find((item) => item.id === id);
   if (!pokemon || !canEvolve(id, progress)) return progress;
 
-  const nextId = pokemon.evolutionLine[pokemon.stage];
+  const nextIds = getEvolutionOptionIds(id).filter((optionId) => !progress.unlockedPokemonIds.includes(optionId));
+  const nextId = targetId && nextIds.includes(targetId) ? targetId : nextIds[0];
+  if (!nextId) return progress;
   const cost = pokemon.stage === 1 ? 2 : 3;
 
   return {
@@ -172,6 +185,14 @@ export const evolvePokemon = (id: string, progress: UserProgress): UserProgress 
     unlockedPokemonIds: Array.from(new Set([...progress.unlockedPokemonIds, nextId])),
     evolvedPokemonIds: Array.from(new Set([...progress.evolvedPokemonIds, nextId]))
   };
+};
+
+export const getEvolutionOptionIds = (id: string) => {
+  const pokemon = pokemonData.find((item) => item.id === id);
+  if (!pokemon) return [];
+  if (pokemon.evolvesTo?.length) return pokemon.evolvesTo;
+  const nextId = pokemon.evolutionLine[pokemon.stage];
+  return nextId ? [nextId] : [];
 };
 
 export const passQuiz = (pokemonId: string, progress: UserProgress, correct: number, total: number): UserProgress => ({
@@ -187,22 +208,54 @@ export const completePokemon = (pokemonId: string, progress: UserProgress): User
   const learnedPokemonIds = Array.from(new Set([...progress.learnedPokemonIds, pokemonId]));
   const today = todayString();
   const dailyDone = completedTodayPokemonIds.length >= DAILY_LEARNING_COUNT;
-  const awardCandy = dailyDone && !progress.candyAwardedDates.includes(today);
+  const reward = exchangeStarsForCandy(progress.stars + 1, progress.candies);
 
   return {
     ...progress,
-    stars: progress.stars + 1,
-    candies: progress.candies + (awardCandy ? 1 : 0),
+    stars: reward.stars,
+    candies: reward.candies,
     completedTodayPokemonIds,
     learnedPokemonIds,
-    lastCompletedDate: awardCandy ? today : progress.lastCompletedDate,
-    streakDays: awardCandy ? progress.streakDays + 1 : progress.streakDays,
-    candyAwardedDates: awardCandy ? [...progress.candyAwardedDates, today] : progress.candyAwardedDates
+    lastCompletedDate: dailyDone ? today : progress.lastCompletedDate,
+    streakDays: dailyDone && progress.lastCompletedDate !== today ? progress.streakDays + 1 : progress.streakDays,
+    candyAwardedDates: dailyDone && !progress.candyAwardedDates.includes(today) ? [...progress.candyAwardedDates, today] : progress.candyAwardedDates
   };
 };
 
-export const completeReview = (progress: UserProgress, masteredIds: string[]) => ({
-  ...progress,
-  stars: progress.stars + 1,
-  masteredPokemonIds: Array.from(new Set([...progress.masteredPokemonIds, ...masteredIds]))
+export const completeReview = (progress: UserProgress, masteredIds: string[]) => {
+  const reward = exchangeStarsForCandy(progress.stars + 1, progress.candies);
+  return {
+    ...progress,
+    stars: reward.stars,
+    candies: reward.candies,
+    masteredPokemonIds: Array.from(new Set([...progress.masteredPokemonIds, ...masteredIds]))
+  };
+};
+
+const chooseTodayBasePokemonIds = (progress: UserProgress, date: string) => {
+  const basePokemon = pokemonData.filter((pokemon) => pokemon.stage === 1);
+  const newBasePokemon = basePokemon.filter((pokemon) => !progress.learnedPokemonIds.includes(pokemon.id));
+  const primaryPool = shuffleBySeed(newBasePokemon, `${date}:new:${progress.learnedPokemonIds.join("|")}`);
+  const fallbackPool = shuffleBySeed(basePokemon, `${date}:all`);
+  return Array.from(new Set([...primaryPool, ...fallbackPool].map((pokemon) => pokemon.id))).slice(0, DAILY_LEARNING_COUNT);
+};
+
+const shuffleBySeed = <T extends { id: string }>(items: T[], seed: string) =>
+  items
+    .map((item) => ({ item, sort: seededHash(`${seed}:${item.id}`) }))
+    .sort((a, b) => a.sort - b.sort)
+    .map(({ item }) => item);
+
+const seededHash = (value: string) => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+};
+
+const exchangeStarsForCandy = (stars: number, candies: number) => ({
+  stars: stars % STARS_PER_CANDY,
+  candies: candies + Math.floor(stars / STARS_PER_CANDY)
 });
