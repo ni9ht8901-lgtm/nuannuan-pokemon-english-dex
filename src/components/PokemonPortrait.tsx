@@ -21,7 +21,12 @@ const typeGradient = {
   poison: "from-fuchsia-300 via-purple-100 to-pink-100",
   flying: "from-cyan-200 via-sky-100 to-white",
   psychic: "from-purple-300 via-fuchsia-100 to-pink-100",
-  fairy: "from-rose-200 via-pink-100 to-white"
+  fairy: "from-rose-200 via-pink-100 to-white",
+  rock: "from-stone-300 via-amber-100 to-stone-200",
+  ground: "from-amber-300 via-orange-100 to-lime-100",
+  steel: "from-slate-300 via-sky-100 to-zinc-200",
+  dark: "from-zinc-500 via-violet-200 to-slate-200",
+  ice: "from-cyan-200 via-white to-blue-100"
 };
 
 export function PokemonPortrait({ pokemon, activeEffect, effectLabel, locked, onTap }: PokemonPortraitProps) {
@@ -195,6 +200,54 @@ function EffectOverlay({ effect, type }: { effect?: string; type: Pokemon["type"
     );
   }
 
+  if (effect.includes("ice") || effect.includes("snow")) {
+    return (
+      <motion.div
+        className="pointer-events-none absolute inset-0 z-20 grid place-items-center text-6xl"
+        animate={{ scale: [0.4, 1.16, 0.8], rotate: [0, 12, -8], opacity: [0, 1, 0] }}
+        transition={{ duration: 0.9 }}
+      >
+        ❄️
+      </motion.div>
+    );
+  }
+
+  if (effect.includes("steel") || effect.includes("metal")) {
+    return (
+      <motion.div
+        className="pointer-events-none absolute inset-0 z-20 grid place-items-center text-6xl"
+        animate={{ scale: [0.4, 1.12, 0.85], opacity: [0, 1, 0] }}
+        transition={{ duration: 0.85 }}
+      >
+        ✦
+      </motion.div>
+    );
+  }
+
+  if (effect.includes("rock") || effect.includes("ground")) {
+    return (
+      <motion.div
+        className="pointer-events-none absolute inset-x-0 bottom-10 z-20 text-center text-5xl"
+        animate={{ y: [10, -8, 4], rotate: [-6, 5, -4], opacity: [0, 1, 0] }}
+        transition={{ duration: 0.85 }}
+      >
+        🪨
+      </motion.div>
+    );
+  }
+
+  if (effect.includes("dark") || effect.includes("moon")) {
+    return (
+      <motion.div
+        className="pointer-events-none absolute inset-0 z-20 grid place-items-center text-6xl"
+        animate={{ scale: [0.5, 1.1, 0.8], opacity: [0, 1, 0] }}
+        transition={{ duration: 0.9 }}
+      >
+        🌙
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       className="pointer-events-none absolute right-8 top-16 z-20 text-6xl"
@@ -215,6 +268,10 @@ function getImageAnimation(effect: string) {
   if (effect.includes("ghost")) return { y: [0, -20, 0], opacity: [1, 0.78, 1], scale: [1, 1.06, 1] };
   if (effect.includes("dragon")) return { y: [0, -18, 0], scale: [1, 1.08, 1] };
   if (effect.includes("psychic")) return { y: [0, -16, 0], scale: [1, 1.1, 1], rotate: [-2, 2, -2] };
+  if (effect.includes("steel") || effect.includes("metal")) return { y: [0, -10, 0], scale: [1, 1.06, 1] };
+  if (effect.includes("rock") || effect.includes("ground")) return { x: [0, -5, 5, 0], y: [0, 5, 0], scale: [1, 1.04, 1] };
+  if (effect.includes("ice") || effect.includes("snow")) return { y: [0, -12, 0], scale: [1, 1.05, 1] };
+  if (effect.includes("dark") || effect.includes("moon")) return { y: [0, -12, 0], scale: [1, 1.06, 1] };
   if (effect.includes("tail") || effect.includes("wave")) return { rotate: [0, -7, 7, 0], scale: [1, 1.05, 1] };
   if (effect.includes("shell") || effect.includes("hide")) return { scale: [1, 0.86, 1], y: [0, 8, 0] };
   if (effect.includes("jump") || effect.includes("hop")) return { y: [0, -22, 0], scale: [1, 1.06, 1] };
@@ -230,5 +287,9 @@ function getEffectText(effect: string | undefined, type: Pokemon["type"]) {
   if (effect.includes("jump") || effect.includes("hop")) return "Hop!";
   if (effect.includes("flower") || effect.includes("bud") || effect.includes("seed")) return "Bloom!";
   if (effect.includes("psychic")) return "Mind power!";
-  return type === "fire" ? "Flame!" : type === "water" ? "Splash!" : "Grow!";
+  if (effect.includes("steel") || effect.includes("metal")) return "Shine!";
+  if (effect.includes("rock") || effect.includes("ground")) return "Shake!";
+  if (effect.includes("ice") || effect.includes("snow")) return "Freeze!";
+  if (effect.includes("dark") || effect.includes("moon")) return "Moon glow!";
+  return type === "fire" ? "Flame!" : type === "water" ? "Splash!" : type === "ice" ? "Freeze!" : "Grow!";
 }

@@ -129,7 +129,12 @@ export const typeLabel = {
   poison: "Poison",
   flying: "Flying",
   psychic: "Psychic",
-  fairy: "Fairy"
+  fairy: "Fairy",
+  rock: "Rock",
+  ground: "Ground",
+  steel: "Steel",
+  dark: "Dark",
+  ice: "Ice"
 } as const;
 
 export const typeZhLabel = {
@@ -144,7 +149,12 @@ export const typeZhLabel = {
   poison: "毒系",
   flying: "飞行系",
   psychic: "超能力系",
-  fairy: "妖精系"
+  fairy: "妖精系",
+  rock: "岩石系",
+  ground: "地面系",
+  steel: "钢系",
+  dark: "恶系",
+  ice: "冰系"
 } as const;
 
 export const getPokemonTypes = (pokemon: { type: keyof typeof typeLabel; types?: Array<keyof typeof typeLabel> }) =>

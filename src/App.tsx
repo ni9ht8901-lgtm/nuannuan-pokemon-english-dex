@@ -45,7 +45,12 @@ const typeClass = {
   poison: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700",
   flying: "border-cyan-200 bg-cyan-50 text-cyan-700",
   psychic: "border-purple-200 bg-purple-50 text-purple-700",
-  fairy: "border-rose-200 bg-rose-50 text-rose-700"
+  fairy: "border-rose-200 bg-rose-50 text-rose-700",
+  rock: "border-stone-300 bg-stone-100 text-stone-700",
+  ground: "border-amber-300 bg-amber-100 text-amber-800",
+  steel: "border-slate-300 bg-slate-100 text-slate-700",
+  dark: "border-zinc-300 bg-zinc-100 text-zinc-800",
+  ice: "border-cyan-200 bg-cyan-50 text-cyan-700"
 };
 
 registerSW({ immediate: true });
@@ -374,23 +379,24 @@ function LearnPage({
               <p className="text-sm font-black uppercase tracking-[0.12em] text-yellow-700">Ready to evolve</p>
               <h2 className="mt-1 text-xl font-black text-slate-900">选择进化方向</h2>
               <p className="font-bold text-yellow-800">Use {pokemon.stage === 1 ? 2 : 3} Candy. Tap one evolved Pokémon.</p>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 {evolutionOptions.map((targetPokemon) => (
                   <motion.button
                     key={targetPokemon.id}
-                    className="rounded-3xl bg-white p-3 text-left shadow transition active:scale-[0.98]"
+                    className="rounded-3xl bg-white p-4 text-left shadow transition active:scale-[0.98]"
                     onClick={() => handleEvolve(targetPokemon)}
                     type="button"
                     animate={{ boxShadow: ["0 0 0 rgba(250,204,21,0)", "0 0 24px rgba(250,204,21,0.55)", "0 0 0 rgba(250,204,21,0)"] }}
                     transition={{ duration: 1.4, repeat: Infinity }}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-yellow-50">
+                    <div className="grid gap-3">
+                      <div className="mx-auto w-full max-w-[190px] overflow-hidden rounded-[28px] bg-yellow-50">
                         <PokemonPortrait pokemon={targetPokemon} />
                       </div>
                       <div>
-                        <p className="font-black text-slate-900">{targetPokemon.nameEn}</p>
+                        <p className="text-lg font-black text-slate-900">{targetPokemon.nameEn}</p>
                         <p className="text-sm font-bold text-slate-500">{targetPokemon.nameZh}</p>
+                        <p className="mt-1 text-xs font-black uppercase tracking-[0.08em] text-yellow-700">Tap to evolve</p>
                       </div>
                     </div>
                   </motion.button>
@@ -728,7 +734,7 @@ function idToName(id: string) {
 function stageLabel(pokemon: Pokemon) {
   if (pokemon.evolutionLine.length === 1) return "原始形态 · 无进化";
   if (pokemon.stage === 1) return "原始形态";
-  if (pokemon.stage >= pokemon.evolutionLine.length || pokemon.stage === 3) return "最终进化";
+  if (getEvolutionOptionIds(pokemon.id).length === 0) return "最终进化";
   return `第 ${pokemon.stage} 阶进化`;
 }
 
@@ -747,6 +753,16 @@ function iconForText(text: string, type: Pokemon["type"]) {
   if (value.includes("ghost") || value.includes("shadow") || value.includes("hide") || value.includes("float")) return "👻";
   if (value.includes("pearl") || value.includes("glow")) return "✨";
   if (value.includes("mind") || value.includes("mystery")) return "🌀";
+  if (value.includes("ice") || value.includes("cold") || value.includes("snow")) return "❄️";
+  if (value.includes("rock") || value.includes("stone") || value.includes("mountain")) return "🪨";
+  if (value.includes("ground")) return "🟫";
+  if (value.includes("steel") || value.includes("metal") || value.includes("hard")) return "✦";
+  if (value.includes("moon") || value.includes("night") || value.includes("dark")) return "🌙";
+  if (value.includes("ribbon") || value.includes("gentle") || value.includes("luck") || value.includes("peace")) return "✨";
+  if (value.includes("dog") || value.includes("bark") || value.includes("brave") || value.includes("hero") || value.includes("knight")) return "⭐";
+  if (value.includes("fish") || value.includes("fin")) return "🐟";
+  if (value.includes("egg")) return "🥚";
+  if (value.includes("dance") || value.includes("graceful")) return "💫";
   if (value.includes("claw")) return "⚡";
   if (value.includes("seed")) return "🌱";
   if (value.includes("leaf") || value.includes("green")) return "🍃";
@@ -773,7 +789,12 @@ function effectForText(text: string, pokemon: Pokemon) {
   if (value.includes("arm") || value.includes("muscle") || value.includes("power") || value.includes("lift") || value.includes("heavy") || value.includes("hand")) return pokemon.interactions.find((item) => item.includes("arm") || item.includes("body")) ?? pokemon.interactions[0];
   if (value.includes("ghost") || value.includes("shadow") || value.includes("float") || value.includes("hide") || value.includes("purple")) return pokemon.interactions.find((item) => item.includes("ghost") || item.includes("body")) ?? pokemon.interactions[0];
   if (value.includes("dragon") || value.includes("pearl") || value.includes("glow") || value.includes("long") || value.includes("kind") || value.includes("far")) return pokemon.interactions.find((item) => item.includes("dragon") || item.includes("wing")) ?? pokemon.interactions[0];
-  if (value.includes("mind") || value.includes("mystery")) return pokemon.interactions.find((item) => item.includes("psychic")) ?? pokemon.interactions[0];
+  if (value.includes("mind") || value.includes("mystery") || value.includes("smart") || value.includes("magic") || value.includes("spoon") || value.includes("focus") || value.includes("feel")) return pokemon.interactions.find((item) => item.includes("psychic")) ?? pokemon.interactions[0];
+  if (value.includes("ice") || value.includes("cold") || value.includes("snow")) return pokemon.interactions.find((item) => item.includes("ice")) ?? pokemon.interactions[0];
+  if (value.includes("steel") || value.includes("metal") || value.includes("hard")) return pokemon.interactions.find((item) => item.includes("steel")) ?? pokemon.interactions[0];
+  if (value.includes("rock") || value.includes("ground") || value.includes("mountain")) return pokemon.interactions.find((item) => item.includes("rock") || item.includes("ground")) ?? pokemon.interactions[0];
+  if (value.includes("moon") || value.includes("night") || value.includes("dark")) return pokemon.interactions.find((item) => item.includes("dark") || item.includes("moon")) ?? pokemon.interactions[0];
+  if (value.includes("ribbon") || value.includes("gentle") || value.includes("luck") || value.includes("peace")) return pokemon.interactions.find((item) => item.includes("ribbon")) ?? pokemon.interactions[0];
   if (value.includes("seed") || value.includes("leaf") || value.includes("green") || value.includes("plant") || value.includes("grow")) {
     return pokemon.interactions.find((item) => item.includes("seed") || item.includes("leaf") || item.includes("bud") || item.includes("flower")) ?? pokemon.interactions[0];
   }
@@ -867,6 +888,11 @@ function playTypeSound(type: Pokemon["type"]) {
   if (type === "flying") return playNoise(0.14, 1200, 0.028);
   if (type === "psychic") return playTone([660, 990, 1320, 880], 0.07, "sine", 0.035);
   if (type === "fairy") return playTone([784, 988, 1175], 0.08, "triangle", 0.035);
+  if (type === "rock") return playNoise(0.16, 180, 0.055);
+  if (type === "ground") return playTone([120, 90, 150], 0.1, "sine", 0.055);
+  if (type === "steel") return playTone([740, 520, 880], 0.06, "triangle", 0.045);
+  if (type === "dark") return playTone([220, 165, 110], 0.12, "sawtooth", 0.025);
+  if (type === "ice") return playTone([1046, 1318, 1568], 0.07, "sine", 0.03);
 }
 
 function getAudioContext() {
