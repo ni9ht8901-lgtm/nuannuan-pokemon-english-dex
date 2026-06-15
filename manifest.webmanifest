@@ -1,0 +1,25 @@
+{
+  "name": "暖暖的宝可梦英语图鉴",
+  "short_name": "暖暖图鉴",
+  "description": "每天认识 3 只宝可梦，学习简单英文单词和句子。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fff7ed",
+  "theme_color": "#7dd3fc",
+  "icons": [
+    {
+      "src": "./icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
