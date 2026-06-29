@@ -8,11 +8,25 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["icons/icon-192.svg", "icons/icon-512.svg", "pokemon/*.svg"],
+      showMaximumFileSizeToCacheInBytesWarning: true,
+      includeAssets: ["icons/icon-192.svg", "icons/icon-512.svg"],
       manifest: false,
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,webmanifest}"],
-        navigateFallback: "index.html"
+        globPatterns: ["**/*.{js,css,html,svg,webmanifest}"],
+        globIgnores: ["**/visual-refs/**"],
+        navigateFallback: "index.html",
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.destination === "image",
+            handler: "CacheFirst",
+            options: {
+              cacheName: "visual-reference-images",
+              expiration: {
+                maxEntries: 20
+              }
+            }
+          }
+        ]
       }
     })
   ]

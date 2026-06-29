@@ -1,12 +1,13 @@
 {
-  "name": "nuannuan-pokemon-english-dex",
+  "name": "letter-transform-station",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "check:mvp": "node scripts/check-mvp.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
