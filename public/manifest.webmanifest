@@ -1,13 +1,13 @@
 {
-  "name": "暖暖的宝可梦英语图鉴",
-  "short_name": "暖暖图鉴",
-  "description": "每天认识 3 只宝可梦，学习简单英文单词和句子。",
+  "name": "字母变身局",
+  "short_name": "变身局",
+  "description": "帮助孩子在 English Mode 与拼音模式之间清晰切换的儿童教育 PWA。",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#fff7ed",
-  "theme_color": "#7dd3fc",
+  "background_color": "#FFF9ED",
+  "theme_color": "#FFB25C",
   "icons": [
     {
       "src": "./icons/icon-192.svg",

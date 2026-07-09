@@ -1,0 +1,38 @@
+{
+  "checkedAt": "2026-07-09T07:57:46.505Z",
+  "blockers": [
+    "GitHub 授权不可用或未登录",
+    "Vercel 授权不可用或未登录",
+    "缺少 SUPABASE_URL 或 SUPABASE_SERVICE_ROLE_KEY"
+  ],
+  "results": [
+    {
+      "id": "github",
+      "label": "GitHub 授权",
+      "command": [
+        "gh",
+        "auth",
+        "status"
+      ],
+      "ok": false,
+      "blocker": "GitHub 授权不可用或未登录"
+    },
+    {
+      "id": "vercel",
+      "label": "Vercel 授权",
+      "command": [
+        "vercel",
+        "whoami"
+      ],
+      "ok": false,
+      "blocker": "Vercel 授权不可用或未登录"
+    },
+    {
+      "id": "supabase",
+      "label": "Supabase 项目",
+      "command": [],
+      "ok": false,
+      "blocker": "缺少 SUPABASE_URL 或 SUPABASE_SERVICE_ROLE_KEY"
+    }
+  ]
+}

@@ -1,953 +1,874 @@
-import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { registerSW } from "virtual:pwa-register";
-import { DAILY_LEARNING_COUNT, pokemonData, type Pokemon } from "./data/pokemonData";
-import {
-  canEvolve,
-  completePokemon,
-  completeReview,
-  evolvePokemon,
-  getEvolutionOptionIds,
-  getPokemonTypes,
-  getPrimaryType,
-  getPokemonStatus,
-  getTodayPokemonIds,
-  loadProgress,
-  passQuiz,
-  saveProgress,
-  typeLabel,
-  typeZhLabel,
-  type UserProgress
-} from "./lib/progress";
-import { PokemonPortrait } from "./components/PokemonPortrait";
-import { ProgressRing } from "./components/ProgressRing";
+import { growthClient, mapLetterProgressToGrowthProgress } from "./lib/growthClient";
 
-type Tab = "adventure" | "dex" | "review" | "rewards";
-type Route = { tab: Tab; pokemonId?: string; quizPokemonId?: string };
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext;
+  }
+}
 
-const tabs: Array<{ id: Tab; label: string; icon: string }> = [
-  { id: "adventure", label: "Adventure", icon: "🧭" },
-  { id: "dex", label: "Dex", icon: "📘" },
-  { id: "review", label: "Review", icon: "🎲" },
-  { id: "rewards", label: "Rewards", icon: "⭐" }
+const visualRefs = {
+  board: "./visual-refs/board.png",
+  home: "./visual-refs/home.png",
+  identity: "./visual-refs/identity.png",
+  train: "./visual-refs/train.png",
+  tone: "./visual-refs/tone.png",
+  report: "./visual-refs/report.png"
+};
+
+type Mode = "english" | "pinyin";
+type View = "onboarding" | "home" | "identity" | "train" | "tone" | "recordings" | "report";
+type TaskId = "identity" | "train" | "tone";
+type ErrorType = "mode" | "symbol" | "blend" | "tone" | "operation";
+
+type AnswerEvent = {
+  id: string;
+  taskId: TaskId;
+  questionId: string;
+  correct: boolean;
+  attempts: number;
+  errorType?: ErrorType;
+  elapsedMs: number;
+  at: string;
+};
+
+type RecordingItem = {
+  id: string;
+  label: string;
+  url: string;
+  createdAt: string;
+};
+
+type Progress = {
+  childName: string;
+  avatar: string;
+  mode: Mode;
+  stars: number;
+  stickerIds: string[];
+  completedTaskIds: TaskId[];
+  events: AnswerEvent[];
+  recordings: RecordingItem[];
+  onboarded: boolean;
+};
+
+const STORAGE_KEY = "letter-transform-station-progress-v1";
+const MIGRATION_MARKER_KEY = "letter-transform-station-growth-migration-v1";
+
+const defaultProgress: Progress = {
+  childName: "暖暖",
+  avatar: "hoodie",
+  mode: "pinyin",
+  stars: 0,
+  stickerIds: [],
+  completedTaskIds: [],
+  events: [],
+  recordings: [],
+  onboarded: false
+};
+
+const tasks: Array<{ id: TaskId; title: string; minutes: string; view: View; icon: string }> = [
+  { id: "identity", title: "听声音，找身份", minutes: "3题", view: "identity", icon: "♪" },
+  { id: "train", title: "拼音小火车", minutes: "2题", view: "train", icon: "→" },
+  { id: "tone", title: "声调过山车", minutes: "2题", view: "tone", icon: "~" }
 ];
 
-const typeClass = {
-  fire: "border-orange-200 bg-orange-50 text-orange-700",
-  water: "border-sky-200 bg-sky-50 text-sky-700",
-  grass: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  electric: "border-yellow-200 bg-yellow-50 text-yellow-700",
-  normal: "border-pink-200 bg-pink-50 text-pink-700",
-  fighting: "border-red-200 bg-red-50 text-red-700",
-  ghost: "border-violet-200 bg-violet-50 text-violet-700",
-  dragon: "border-indigo-200 bg-indigo-50 text-indigo-700",
-  poison: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700",
-  flying: "border-cyan-200 bg-cyan-50 text-cyan-700",
-  psychic: "border-purple-200 bg-purple-50 text-purple-700",
-  fairy: "border-rose-200 bg-rose-50 text-rose-700",
-  rock: "border-stone-300 bg-stone-100 text-stone-700",
-  ground: "border-amber-300 bg-amber-100 text-amber-800",
-  steel: "border-slate-300 bg-slate-100 text-slate-700",
-  dark: "border-zinc-300 bg-zinc-100 text-zinc-800",
-  ice: "border-cyan-200 bg-cyan-50 text-cyan-700"
+const copy = {
+  correct: ["找到了，就是它！", "频道切得真快。"],
+  retry: ["字母没有变，世界变了。再看看现在是哪种模式。", "差一点。先看看现在是哪种模式。"]
 };
+
+const identityQuestions = [
+  {
+    id: "d1-id-001",
+    mode: "pinyin" as Mode,
+    prompt: "听一听，这是谁的声音？",
+    soundText: "拼音 m，嘴巴轻轻闭上，m。",
+    options: [
+      { id: "opt-m", display: "m", helper: "拼音声母" },
+      { id: "opt-a", display: "a", helper: "拼音韵母" }
+    ],
+    correctAnswer: "opt-m",
+    errorType: "symbol" as ErrorType
+  },
+  {
+    id: "d1-id-002",
+    mode: "english" as Mode,
+    prompt: "看见 a 在森林里，它是哪种身份？",
+    soundText: "English Mode, letter a says apple sound.",
+    options: [
+      { id: "english-a", display: "English a", helper: "自然森林" },
+      { id: "pinyin-a", display: "拼音 a", helper: "灯笼小镇" },
+      { id: "pinyin-m", display: "拼音 m", helper: "声母朋友" }
+    ],
+    correctAnswer: "english-a",
+    errorType: "mode" as ErrorType
+  },
+  {
+    id: "d1-id-003",
+    mode: "pinyin" as Mode,
+    prompt: "找出混进拼音世界的卡片。",
+    soundText: "现在是拼音模式，先看世界再开口。",
+    options: [
+      { id: "pinyin-ma", display: "ma", helper: "拼音小火车" },
+      { id: "english-m", display: "English m", helper: "自然森林" },
+      { id: "pinyin-a", display: "a", helper: "拼音韵母" }
+    ],
+    correctAnswer: "english-m",
+    errorType: "mode" as ErrorType
+  }
+];
+
+const trainQuestions = [
+  {
+    id: "d1-tr-001",
+    initial: "m",
+    final: "a",
+    result: "ma",
+    toned: "mā",
+    word: "妈妈",
+    scene: "熟悉的人"
+  },
+  {
+    id: "d1-tr-002",
+    initial: "m",
+    final: "a",
+    result: "ma",
+    toned: "mǎ",
+    word: "蚂蚁",
+    scene: "小小昆虫"
+  }
+];
+
+const toneQuestions = [
+  { id: "d1-to-001", base: "ma", display: "mā", tone: 1, word: "妈妈", audio: "一声，平平走。" },
+  { id: "d1-to-002", base: "ma", display: "mà", tone: 4, word: "轻轻一落", audio: "四声，从高到低滑下来。" }
+];
 
 registerSW({ immediate: true });
 
 export function App() {
-  const [route, setRoute] = useState<Route>(() => parseRoute());
-  const [progress, setProgress] = useState<UserProgress>(() => loadProgress());
+  const [progress, setProgress] = useState<Progress>(() => loadProgress());
+  const [view, setView] = useState<View>(() => (loadProgress().onboarded ? "home" : "onboarding"));
 
   useEffect(() => {
-    const onHash = () => setRoute(parseRoute());
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    loadProgressFromIndexedDB().then((stored) => {
+      if (stored) {
+        setProgress(stored);
+        setView(stored.onboarded ? "home" : "onboarding");
+      }
+    });
   }, []);
 
-  const updateProgress = (next: UserProgress) => {
+  useEffect(() => {
+    void growthClient.startSession({ entryView: view });
+    void growthClient.trackEvent("app_opened", { view });
+    migrateLegacyProgressOnce(progress);
+    const flushQueue = () => {
+      void growthClient.flushOfflineQueue();
+    };
+    flushQueue();
+    window.addEventListener("online", flushQueue);
+    return () => {
+      window.removeEventListener("online", flushQueue);
+      void growthClient.endSession({ exitView: view });
+    };
+  }, []);
+
+  const save = (next: Progress) => {
     setProgress(next);
-    saveProgress(next);
+    persistProgress(next);
+    void growthClient.updateProgress(mapLetterProgressToGrowthProgress(next));
   };
 
-  const navigate = (next: Route) => {
-    window.location.hash = stringifyRoute(next);
-    setRoute(next);
+  const completeTask = (taskId: TaskId, event: AnswerEvent) => {
+    const completedTaskIds = progress.completedTaskIds.includes(taskId)
+      ? progress.completedTaskIds
+      : [...progress.completedTaskIds, taskId];
+    const allDone = completedTaskIds.length === tasks.length;
+    const stickerIds = allDone && !progress.stickerIds.includes("sticker-switch-day1")
+      ? [...progress.stickerIds, "sticker-switch-day1"]
+      : progress.stickerIds;
+    playSoundEffect(allDone ? "reward" : "correct");
+    const nextProgress = {
+      ...progress,
+      events: [...progress.events, event],
+      completedTaskIds,
+      stickerIds,
+      stars: Math.max(progress.stars, completedTaskIds.length)
+    };
+    save(nextProgress);
+    void growthClient.trackEvent("task_completed", {
+      taskId,
+      questionId: event.questionId,
+      correct: event.correct,
+      attempts: event.attempts,
+      errorType: event.errorType,
+      elapsedMs: event.elapsedMs
+    });
+    if (allDone && !progress.stickerIds.includes("sticker-switch-day1")) {
+      void growthClient.unlockAchievement("sticker-switch-day1", {
+        name: "完成今日变身任务",
+        completedTaskIds
+      });
+    }
   };
 
-  const selectedPokemon = pokemonData.find((pokemon) => pokemon.id === route.pokemonId);
-  const quizPokemon = pokemonData.find((pokemon) => pokemon.id === route.quizPokemonId);
+  const nextTask = tasks.find((task) => !progress.completedTaskIds.includes(task.id)) ?? tasks[0];
+  const screen = view === "onboarding" ? (
+    <Onboarding progress={progress} onDone={(next) => { playSoundEffect("start"); save(next); setView("home"); }} />
+  ) : view === "identity" ? (
+    <IdentityGame
+      mode={progress.mode}
+      onModeChange={(mode) => save({ ...progress, mode })}
+      onDone={(event) => { completeTask("identity", event); setView("home"); }}
+      onBack={() => setView("home")}
+    />
+  ) : view === "train" ? (
+    <PinyinTrain onDone={(event) => { completeTask("train", event); setView("home"); }} onBack={() => setView("home")} />
+  ) : view === "tone" ? (
+    <ToneCoaster
+      recordings={progress.recordings}
+      onRecordings={(recordings) => save({ ...progress, recordings })}
+      onDone={(event) => { completeTask("tone", event); setView("home"); }}
+      onBack={() => setView("home")}
+    />
+  ) : view === "recordings" ? (
+    <Recordings progress={progress} onSave={save} onBack={() => setView("home")} />
+  ) : view === "report" ? (
+    <ParentReport progress={progress} onPractice={(taskId) => setView(taskId)} onBack={() => setView("home")} />
+  ) : (
+    <Home
+      progress={progress}
+      nextTask={nextTask}
+      onModeChange={(mode) => save({ ...progress, mode })}
+      onStart={() => { playSoundEffect("start"); setView(nextTask.view); }}
+      onOpen={(nextView) => { playSoundEffect(nextView === "report" ? "tap" : "start"); setView(nextView); }}
+      onResetOnboarding={() => save({ ...progress, onboarded: false })}
+    />
+  );
 
   return (
-    <div className="min-h-screen bg-[#fff7ed] text-slate-800">
-      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,#bae6fd,transparent_32%),radial-gradient(circle_at_bottom_right,#bbf7d0,transparent_28%)]" />
-      <main className="mx-auto min-h-screen w-full max-w-5xl px-4 pb-28 pt-[max(18px,env(safe-area-inset-top))] sm:px-6">
-        <AnimatePresence mode="wait">
-          {quizPokemon ? (
-            <QuizPage
-              key={`quiz-${quizPokemon.id}`}
-              pokemon={quizPokemon}
-              progress={progress}
-              onPass={(correct, total) => updateProgress(passQuiz(quizPokemon.id, progress, correct, total))}
-              onDone={() => navigate({ tab: route.tab, pokemonId: quizPokemon.id })}
-            />
-          ) : selectedPokemon ? (
-            <LearnPage
-              key={`learn-${selectedPokemon.id}`}
-              pokemon={selectedPokemon}
-              progress={progress}
-              onBack={() => navigate({ tab: route.tab })}
-              onQuiz={() => navigate({ tab: route.tab, quizPokemonId: selectedPokemon.id })}
-              onComplete={() => updateProgress(completePokemon(selectedPokemon.id, progress))}
-              onEvolve={(targetId) => updateProgress(evolvePokemon(selectedPokemon.id, progress, targetId))}
-            />
-          ) : route.tab === "dex" ? (
-            <DexPage key="dex" progress={progress} onOpen={(id) => navigate({ tab: "dex", pokemonId: id })} />
-          ) : route.tab === "review" ? (
-            <ReviewPage
-              key="review"
-              progress={progress}
-              onOpen={(id) => navigate({ tab: "review", quizPokemonId: id })}
-              onReviewComplete={(ids) => updateProgress(completeReview(progress, ids))}
-            />
-          ) : route.tab === "rewards" ? (
-            <RewardsPage key="rewards" progress={progress} onOpenDex={() => navigate({ tab: "dex" })} />
-          ) : (
-            <AdventurePage
-              key="adventure"
-              progress={progress}
-              onOpen={(id) => navigate({ tab: "adventure", pokemonId: id })}
-            />
-          )}
-        </AnimatePresence>
-      </main>
-      <BottomNav active={route.tab} onSelect={(tab) => navigate({ tab })} />
+    <div className={`app-shell mode-${progress.mode}`}>
+      <AnimatePresence mode="wait">
+        <motion.main key={view} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
+          {screen}
+        </motion.main>
+      </AnimatePresence>
+      {view !== "onboarding" && <BottomNav active={view} onOpen={setView} />}
     </div>
   );
 }
 
-function parseRoute(): Route {
-  const hash = window.location.hash.replace(/^#\/?/, "");
-  const [tabValue, mode, id] = hash.split("/");
-  const tab = tabs.some((item) => item.id === tabValue) ? (tabValue as Tab) : "adventure";
-  if (mode === "pokemon" && id) return { tab, pokemonId: id };
-  if (mode === "quiz" && id) return { tab, quizPokemonId: id };
-  return { tab };
+function loadProgress(): Progress {
+  if (typeof window === "undefined") return defaultProgress;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? { ...defaultProgress, ...JSON.parse(raw) } : defaultProgress;
+  } catch {
+    return defaultProgress;
+  }
 }
 
-function stringifyRoute(route: Route) {
-  if (route.pokemonId) return `/${route.tab}/pokemon/${route.pokemonId}`;
-  if (route.quizPokemonId) return `/${route.tab}/quiz/${route.quizPokemonId}`;
-  return `/${route.tab}`;
+function persistProgress(progress: Progress) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  saveProgressToIndexedDB(progress);
 }
 
-function BottomNav({ active, onSelect }: { active: Tab; onSelect: (tab: Tab) => void }) {
+function migrateLegacyProgressOnce(progress: Progress) {
+  if (typeof window === "undefined") return;
+  if (localStorage.getItem(MIGRATION_MARKER_KEY)) return;
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return;
+  let legacyData: unknown;
+  try {
+    legacyData = JSON.parse(raw);
+  } catch {
+    void growthClient.trackEvent("error_occurred", {
+      source: `localStorage:${STORAGE_KEY}`,
+      message: "Legacy progress JSON could not be parsed"
+    });
+    return;
+  }
+  void growthClient.migrateLegacyData({
+    source: `localStorage:${STORAGE_KEY}`,
+    legacyData,
+    progress: mapLetterProgressToGrowthProgress(progress)
+  }).then(() => {
+    localStorage.setItem(MIGRATION_MARKER_KEY, new Date().toISOString());
+  });
+}
+
+async function openLetterDB() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open("letter-transform-station", 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore("progress");
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function saveProgressToIndexedDB(progress: Progress) {
+  if (!("indexedDB" in window)) return;
+  try {
+    const db = await openLetterDB();
+    const tx = db.transaction("progress", "readwrite");
+    tx.objectStore("progress").put(progress, "current");
+  } catch {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  }
+}
+
+async function loadProgressFromIndexedDB() {
+  if (!("indexedDB" in window)) return undefined;
+  try {
+    const db = await openLetterDB();
+    return await new Promise<Progress | undefined>((resolve) => {
+      const tx = db.transaction("progress", "readonly");
+      const request = tx.objectStore("progress").get("current");
+      request.onsuccess = () => resolve(request.result ? { ...defaultProgress, ...request.result } : undefined);
+      request.onerror = () => resolve(undefined);
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+function Onboarding({ progress, onDone }: { progress: Progress; onDone: (progress: Progress) => void }) {
+  const [childName, setChildName] = useState(progress.childName);
+  const [avatar, setAvatar] = useState(progress.avatar);
+
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-white/80 bg-white/90 pb-[max(10px,env(safe-area-inset-bottom))] pt-2 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] backdrop-blur">
-      <div className="mx-auto grid max-w-3xl grid-cols-4 gap-1 px-3">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={`rounded-2xl px-2 py-2 text-center text-xs font-black transition sm:text-sm ${
-              active === tab.id ? "bg-sky-100 text-sky-700" : "text-slate-500"
-            }`}
-            onClick={() => {
-              playUiClickSound();
-              onSelect(tab.id);
-            }}
-            type="button"
-          >
-            <span className="block text-xl" aria-hidden>
-              {tab.icon}
+    <section className="page center-page">
+      <div className="brand-mark">字</div>
+      <p className="eyebrow">同一个字母，两种声音</p>
+      <h1>字母变身局</h1>
+      <p className="lead">先看世界，再开口。今天先认识 English Mode 和拼音模式。</p>
+      <div className="onboarding-card">
+        <label>
+          小朋友昵称
+          <input value={childName} maxLength={12} onChange={(event) => setChildName(event.target.value)} />
+        </label>
+        <div className="avatar-row" aria-label="选择头像">
+          {["hoodie", "leaf", "lantern"].map((item) => (
+            <button key={item} className={avatar === item ? "avatar selected" : "avatar"} onClick={() => setAvatar(item)} type="button">
+              {item === "hoodie" ? "暖" : item === "leaf" ? "森" : "灯"}
+            </button>
+          ))}
+        </div>
+        <button className="primary-button" type="button" onClick={() => onDone({ ...progress, childName, avatar, onboarded: true })}>
+          进入第一天任务
+        </button>
+        <button className="ghost-button" type="button" onClick={() => onDone({ ...progress, onboarded: true })}>
+          跳过，稍后设置
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function Home({
+  progress,
+  nextTask,
+  onModeChange,
+  onStart,
+  onOpen,
+  onResetOnboarding
+}: {
+  progress: Progress;
+  nextTask: { id: TaskId; title: string; minutes: string; view: View; icon: string };
+  onModeChange: (mode: Mode) => void;
+  onStart: () => void;
+  onOpen: (view: View) => void;
+  onResetOnboarding: () => void;
+}) {
+  const done = progress.completedTaskIds.length === tasks.length;
+
+  return (
+    <section className="page home-screen">
+      <div className="hero-panel">
+        <div className="topline">
+          <div>
+            <h1 className="candy-logo">字母变身局</h1>
+            <p className="tagline">今天继续变身吧！</p>
+          </div>
+          <div className="profile-pill">
+            <div className="kid-badge">{progress.childName.slice(0, 1)}</div>
+            <strong>{progress.childName}</strong>
+            <span>★ {progress.stars + 12}</span>
+          </div>
+        </div>
+        <WorldSwitch mode={progress.mode} onChange={onModeChange} />
+      </div>
+
+      <aside className="task-panel">
+        <h2 className="section-title">★ 今日任务</h2>
+        <div className="progress-card">
+          <span>今日进度</span>
+          <strong>{progress.completedTaskIds.length}/3</strong>
+        </div>
+        {tasks.map((task) => (
+          <button key={task.id} className={`task-card task-${task.id}`} type="button" onClick={() => onOpen(task.view)}>
+            <span className="task-icon">{task.icon}</span>
+            <span>
+              <strong>{task.title}</strong>
+              <small>{progress.completedTaskIds.includes(task.id) ? "已完成，可重玩" : task.minutes}</small>
             </span>
-            {tab.label}
+            <b>{progress.completedTaskIds.includes(task.id) ? "完成" : "开始"}</b>
+          </button>
+        ))}
+        {done && (
+          <div className="reward-card">
+            <strong>今日贴纸已解锁</strong>
+            <span>变身开关贴纸 · 今日总结：能分清两个世界了。</span>
+          </div>
+        )}
+        <button className="primary-button wide start-challenge" type="button" onClick={onStart}>
+          开始挑战
+        </button>
+        <button className="ghost-button" type="button" onClick={() => onOpen("report")}>家长报告</button>
+        <button className="ghost-button" type="button" onClick={onResetOnboarding}>重看首次引导</button>
+      </aside>
+    </section>
+  );
+}
+
+function WorldSwitch({ mode, onChange }: { mode: Mode; onChange: (mode: Mode) => void }) {
+  const [announcing, setAnnouncing] = useState(false);
+  const switchMode = () => {
+    const next = mode === "english" ? "pinyin" : "english";
+    onChange(next);
+    setAnnouncing(true);
+    playSoundEffect(next === "english" ? "modeEnglish" : "modePinyin");
+    speak(next === "english" ? "现在是英语模式" : "现在是拼音模式");
+    window.setTimeout(() => setAnnouncing(false), 700);
+  };
+
+  return (
+    <div className="world-switch">
+      <div className={mode === "english" ? "world-card active english" : "world-card english"}>
+        <img src={visualRefs.home} alt="" />
+        <strong>English Mode</strong>
+        <span>自然森林世界</span>
+      </div>
+      <button className={announcing ? "switch-button switching" : "switch-button"} type="button" onClick={switchMode}>
+        变身开关
+      </button>
+      <div className={mode === "pinyin" ? "world-card active pinyin" : "world-card pinyin"}>
+        <img src={visualRefs.home} alt="" />
+        <strong>拼音模式</strong>
+        <span>灯笼小镇世界</span>
+      </div>
+    </div>
+  );
+}
+
+function IdentityGame({ mode, onModeChange, onDone, onBack }: { mode: Mode; onModeChange: (mode: Mode) => void; onDone: (event: AnswerEvent) => void; onBack: () => void }) {
+  const [index, setIndex] = useState(0);
+  const [attempts, setAttempts] = useState(0);
+  const [selected, setSelected] = useState<string>();
+  const [feedback, setFeedback] = useState("先听声音，再看现在是哪种模式。");
+  const startedAt = useRef(Date.now());
+  const question = identityQuestions[index];
+  const visibleOptions = attempts >= 2 ? question.options.filter((option) => option.id === question.correctAnswer || option.id === selected) : question.options;
+
+  useEffect(() => onModeChange(question.mode), [question.mode]);
+
+  const answer = (optionId: string) => {
+    setSelected(optionId);
+    if (optionId === question.correctAnswer) {
+      playSoundEffect("correct");
+      setFeedback(copy.correct[index % copy.correct.length]);
+      if (index === identityQuestions.length - 1) {
+        onDone(makeEvent("identity", question.id, true, attempts + 1, undefined, startedAt.current));
+      } else {
+        window.setTimeout(() => { setIndex(index + 1); setAttempts(0); setSelected(undefined); setFeedback("下一题，先看世界。"); }, 500);
+      }
+      return;
+    }
+    setAttempts(attempts + 1);
+    playSoundEffect("retry");
+    setFeedback(attempts >= 1 ? "我把选择变少了，再听一次对比音。" : copy.retry[0]);
+  };
+
+  return (
+    <GameShell title="听声音，找身份" mode={mode} art={visualRefs.identity} onBack={onBack}>
+      <p className="game-prompt">{question.prompt}</p>
+      <button className="sound-button" type="button" onClick={() => { playSoundEffect("listen"); speak(question.soundText); }}>播放标准音</button>
+      <div className="answer-grid">
+        {visibleOptions.map((option) => (
+          <button key={option.id} className={selected === option.id ? "answer-card selected" : "answer-card"} type="button" onClick={() => answer(option.id)}>
+            <strong>{option.display}</strong>
+            <span>{option.helper}</span>
           </button>
         ))}
       </div>
+      <p className="feedback">{feedback}</p>
+    </GameShell>
+  );
+}
+
+function PinyinTrain({ onDone, onBack }: { onDone: (event: AnswerEvent) => void; onBack: () => void }) {
+  const [index, setIndex] = useState(0);
+  const [cars, setCars] = useState<string[]>([]);
+  const [feedback, setFeedback] = useState("点击或拖动两节车厢到火车上。");
+  const startedAt = useRef(Date.now());
+  const question = trainQuestions[index];
+  const done = cars.includes(question.initial) && cars.includes(question.final);
+
+  const addCar = (value: string) => {
+    if (!cars.includes(value)) {
+      playSoundEffect("car");
+      setCars([...cars, value]);
+    }
+  };
+
+  const finish = () => {
+    playSoundEffect("train");
+    speak(`${question.initial} 加 ${question.final}，慢慢靠近，${question.result}，${question.toned}，${question.word}`);
+    if (index === trainQuestions.length - 1) {
+      onDone(makeEvent("train", question.id, true, 1, undefined, startedAt.current));
+    } else {
+      setIndex(index + 1);
+      setCars([]);
+      setFeedback("下一列小火车来了。");
+    }
+  };
+
+  return (
+    <GameShell title="拼音小火车" mode="pinyin" art={visualRefs.train} onBack={onBack}>
+      <p className="game-prompt">把声母和韵母拼起来。</p>
+      <div className="train-yard">
+        {[question.initial, question.final].map((car) => (
+          <button key={car} draggable className={car === question.initial ? "train-car initial" : "train-car final"} type="button" onClick={() => addCar(car)} onDragStart={(event) => event.dataTransfer.setData("text/plain", car)}>
+            {car}
+          </button>
+        ))}
+      </div>
+      <div className="track" onDragOver={(event) => event.preventDefault()} onDrop={(event) => addCar(event.dataTransfer.getData("text/plain"))}>
+        <span>{cars[0] ?? "声母"}</span>
+        <b>+</b>
+        <span>{cars[1] ?? "韵母"}</span>
+        <b>=</b>
+        <strong>{done ? question.toned : question.result}</strong>
+      </div>
+      <div className="scene-card">
+        <strong>{question.word}</strong>
+        <span>{question.scene}</span>
+      </div>
+      <button className="primary-button" type="button" disabled={!done} onClick={finish}>播放拼合并完成</button>
+      <p className="feedback">{feedback}</p>
+    </GameShell>
+  );
+}
+
+function ToneCoaster({
+  recordings,
+  onRecordings,
+  onDone,
+  onBack
+}: {
+  recordings: RecordingItem[];
+  onRecordings: (items: RecordingItem[]) => void;
+  onDone: (event: AnswerEvent) => void;
+  onBack: () => void;
+}) {
+  const [index, setIndex] = useState(0);
+  const [choice, setChoice] = useState<number>();
+  const [feedback, setFeedback] = useState("先听目标音，再沿轨迹滑一滑。");
+  const startedAt = useRef(Date.now());
+  const question = toneQuestions[index];
+
+  const choose = (tone: number) => {
+    setChoice(tone);
+    if (tone !== question.tone) {
+      playSoundEffect("retry");
+      setFeedback("这条轨迹还没对上声音。看一看小车是平走还是落下。");
+      return;
+    }
+    playSoundEffect("tone");
+    setFeedback(copy.correct[0]);
+    if (index === toneQuestions.length - 1) {
+      onDone(makeEvent("tone", question.id, true, 1, undefined, startedAt.current));
+    } else {
+      window.setTimeout(() => { setIndex(index + 1); setChoice(undefined); setFeedback("下一条声调轨迹。"); }, 500);
+    }
+  };
+
+  return (
+    <GameShell title="声调过山车" mode="pinyin" art={visualRefs.tone} onBack={onBack}>
+      <p className="game-prompt">{question.display} · {question.word}</p>
+      <button className="sound-button" type="button" onClick={() => { playSoundEffect("listen"); speak(question.audio); }}>播放目标音</button>
+      <div className="tone-grid">
+        {[1, 2, 3, 4].map((tone) => (
+          <button key={tone} className={choice === tone ? "tone-card selected" : "tone-card"} type="button" onClick={() => choose(tone)}>
+            <TonePath tone={tone} />
+            <span>{tone}声</span>
+          </button>
+        ))}
+      </div>
+      <Recorder label={question.display} recordings={recordings} onRecordings={onRecordings} />
+      <p className="feedback">{feedback}</p>
+    </GameShell>
+  );
+}
+
+function TonePath({ tone }: { tone: number }) {
+  const paths: Record<number, string> = {
+    1: "M14 48 H142",
+    2: "M14 62 C52 60 86 34 142 18",
+    3: "M14 26 C48 70 90 72 142 22",
+    4: "M14 18 C58 24 92 48 142 66"
+  };
+
+  return (
+    <svg viewBox="0 0 156 84" aria-hidden>
+      <path d={paths[tone]} fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" />
+      <circle className="coaster-dot" cx={tone === 4 ? "142" : "28"} cy={tone === 4 ? "66" : tone === 2 ? "58" : tone === 3 ? "36" : "48"} r="9" />
+    </svg>
+  );
+}
+
+function Recorder({ label, recordings, onRecordings }: { label: string; recordings: RecordingItem[]; onRecordings: (items: RecordingItem[]) => void }) {
+  const [status, setStatus] = useState("录音只保存在本机，家长同意前不上传。");
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  const start = async () => {
+    if (!("MediaRecorder" in window)) {
+      setStatus("这个浏览器暂时不能录音，可以继续完成课程。");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => chunksRef.current.push(event.data);
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        const url = URL.createObjectURL(blob);
+        onRecordings([{ id: crypto.randomUUID(), label, url, createdAt: new Date().toISOString() }, ...recordings].slice(0, 8));
+        stream.getTracks().forEach((track) => track.stop());
+      };
+      recorder.start();
+      setStatus("正在录音，最多10秒。");
+      window.setTimeout(() => recorder.state === "recording" && recorder.stop(), 10000);
+    } catch {
+      setStatus("没有麦克风权限也没关系，可以先听标准音继续练习。");
+    }
+  };
+
+  const stop = () => {
+    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+    setStatus("录好了，可以回听。");
+  };
+
+  return (
+    <div className="recorder">
+      <div className="recorder-actions">
+        <button className="ghost-button" type="button" onClick={start}>录音</button>
+        <button className="ghost-button" type="button" onClick={stop}>停止</button>
+      </div>
+      <span>{status}</span>
+    </div>
+  );
+}
+
+function Recordings({ progress, onSave, onBack }: { progress: Progress; onSave: (progress: Progress) => void; onBack: () => void }) {
+  return (
+    <section className="page narrow-page">
+      <button className="back-button" type="button" onClick={onBack}>返回</button>
+      <h1>我的录音</h1>
+      {progress.recordings.length === 0 ? <p className="lead">还没有录音。去声调过山车录一段。</p> : progress.recordings.map((item) => (
+        <div className="recording-row" key={item.id}>
+          <strong>{item.label}</strong>
+          <audio controls src={item.url} />
+          <button type="button" onClick={() => onSave({ ...progress, recordings: progress.recordings.filter((recording) => recording.id !== item.id) })}>删除</button>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function ParentReport({ progress, onPractice, onBack }: { progress: Progress; onPractice: (taskId: TaskId) => void; onBack: () => void }) {
+  const weakItems = useMemo(() => buildWeakItems(progress.events), [progress.events]);
+  const weekDone = progress.completedTaskIds.length;
+
+  return (
+    <section className="page report-page">
+      <img className="report-art" src={visualRefs.report} alt="" />
+      <button className="back-button" type="button" onClick={onBack}>返回</button>
+      <p className="eyebrow">家长报告</p>
+      <h1>{progress.childName} 的今日学习</h1>
+      <div className="report-grid">
+        <ReportStat label="今日完成" value={`${progress.completedTaskIds.length}/3`} />
+        <ReportStat label="本周进步" value={`${weekDone} 项`} />
+        <ReportStat label="星星" value={`${progress.stars}`} />
+      </div>
+      <h2>容易混淆</h2>
+      <div className="weak-list">
+        {weakItems.length === 0 ? <p>目前没有明显易错项。完成更多题目后会自动更新。</p> : weakItems.slice(0, 3).map((item) => (
+          <button key={item.type} type="button" onClick={() => onPractice(item.taskId)}>
+            <strong>{item.label}</strong>
+            <span>原因：{item.reason} · 建议3分钟</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function GameShell({ title, mode, art, onBack, children }: { title: string; mode: Mode; art?: string; onBack: () => void; children: React.ReactNode }) {
+  return (
+    <section className={`page narrow-page game-shell mode-${mode}`}>
+      {art && <img className="game-art" src={art} alt="" />}
+      <div className="game-topbar">
+        <button className="back-button" type="button" onClick={onBack}>返回</button>
+        <span>{mode === "english" ? "English Mode · 自然森林" : "拼音模式 · 灯笼小镇"}</span>
+      </div>
+      <h1>{title}</h1>
+      {children}
+    </section>
+  );
+}
+
+function BottomNav({ active, onOpen }: { active: View; onOpen: (view: View) => void }) {
+  const items: Array<{ view: View; label: string }> = [
+    { view: "home", label: "首页" },
+    { view: "identity", label: "练习" },
+    { view: "recordings", label: "录音" },
+    { view: "report", label: "家长" }
+  ];
+  return (
+    <nav className="bottom-nav">
+      {items.map((item) => (
+        <button key={item.view} className={active === item.view ? "active" : ""} type="button" onClick={() => onOpen(item.view)}>
+          {item.label}
+        </button>
+      ))}
     </nav>
   );
 }
 
-function AdventurePage({ progress, onOpen }: { progress: UserProgress; onOpen: (id: string) => void }) {
-  const todayIds = getTodayPokemonIds(progress);
-  const todayPokemon = todayIds.map((id) => pokemonData.find((pokemon) => pokemon.id === id)!).filter(Boolean);
-  const completed = progress.completedTodayPokemonIds.length;
-  const collected = progress.unlockedPokemonIds.length;
-  const doneToday = completed >= DAILY_LEARNING_COUNT;
-
+function Character({ name, text, tone }: { name: string; text: string; tone: string }) {
   return (
-    <PageShell>
-      <section className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-black uppercase tracking-[0.14em] text-sky-700">Today&apos;s Adventure</p>
-          <h1 className="mt-2 text-3xl font-black leading-tight text-slate-900 sm:text-5xl">今天随机解锁 3 只原始宝可梦！</h1>
-        </div>
-        <ProgressRing value={Math.min(completed, DAILY_LEARNING_COUNT)} total={DAILY_LEARNING_COUNT} />
-      </section>
-
-      <section className="grid grid-cols-3 gap-2 sm:gap-4">
-        <Stat label="Streak" value={`${progress.streakDays} 天`} />
-        <Stat label="Stars" value={`${progress.stars}`} />
-        <Stat label="Collected" value={`${collected}/${pokemonData.length}`} />
-      </section>
-
-      {doneToday && (
-        <motion.section
-          className="rounded-[28px] border-2 border-yellow-200 bg-yellow-50 p-5 text-center shadow-soft"
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-        >
-          <div className="text-4xl">🍬</div>
-          <h2 className="mt-2 text-2xl font-black text-yellow-800">今日打卡成功！</h2>
-          <p className="mt-1 font-bold text-yellow-700">Great job! Stars turn into Candy automatically.</p>
-        </motion.section>
-      )}
-
-      <section className="grid gap-4 sm:grid-cols-3">
-        {todayPokemon.map((pokemon) => (
-          <PokemonCard
-            key={pokemon.id}
-            pokemon={pokemon}
-            progress={progress}
-            onClick={() => onOpen(pokemon.id)}
-            cta={progress.completedTodayPokemonIds.includes(pokemon.id) ? "Done" : "Start"}
-          />
-        ))}
-      </section>
-    </PageShell>
-  );
-}
-
-function LearnPage({
-  pokemon,
-  progress,
-  onBack,
-  onQuiz,
-  onComplete,
-  onEvolve
-}: {
-  pokemon: Pokemon;
-  progress: UserProgress;
-  onBack: () => void;
-  onQuiz: () => void;
-  onComplete: () => void;
-  onEvolve: (targetId?: string) => void;
-}) {
-  const [effect, setEffect] = useState<string>();
-  const [effectLabel, setEffectLabel] = useState<string>();
-  const [evolving, setEvolving] = useState(false);
-  const quizPassed = progress.quizPassedPokemonIds.includes(pokemon.id);
-  const completed = progress.completedTodayPokemonIds.includes(pokemon.id);
-  const locked = !progress.unlockedPokemonIds.includes(pokemon.id);
-  const evolutionReady = canEvolve(pokemon.id, progress);
-  const evolutionOptions = getEvolutionOptionIds(pokemon.id)
-    .filter((id) => !progress.unlockedPokemonIds.includes(id))
-    .map((id) => pokemonData.find((item) => item.id === id))
-    .filter((item): item is Pokemon => Boolean(item));
-
-  const triggerEffect = (nextEffect: string, label?: string, speechText?: string) => {
-    playPokemonSound(pokemon);
-    setEffect(nextEffect);
-    setEffectLabel(label);
-    if (speechText) speak(speechText);
-    window.setTimeout(() => {
-      setEffect(undefined);
-      setEffectLabel(undefined);
-    }, 900);
-  };
-
-  const tapPokemon = () => {
-    const nextEffect = pokemon.interactions[Math.floor(Math.random() * pokemon.interactions.length)];
-    triggerEffect(nextEffect);
-  };
-
-  const handleEvolve = (targetPokemon: Pokemon) => {
-    if (evolving) return;
-    setEvolving(true);
-    playPokemonSound(targetPokemon);
-    playRewardSound();
-    setEffect("tap-evolve-flash");
-    setEffectLabel("Evolve!");
-    window.setTimeout(() => {
-      onEvolve(targetPokemon.id);
-      setEvolving(false);
-      setEffect(undefined);
-      setEffectLabel(undefined);
-    }, 950);
-  };
-
-  return (
-    <PageShell>
-      <button
-        className="w-fit rounded-2xl bg-white px-4 py-2 font-black text-slate-600 shadow"
-        onClick={() => {
-          playUiClickSound();
-          onBack();
-        }}
-        type="button"
-      >
-        ← Back
-      </button>
-      <section className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
-        <div>
-          <PokemonPortrait pokemon={pokemon} activeEffect={effect} effectLabel={effectLabel} locked={locked} onTap={tapPokemon} />
-          <p className="mt-3 text-center text-sm font-bold text-slate-500">Tap me, words, or sentences!</p>
-          {evolving && (
-            <motion.div
-              className="pointer-events-none fixed inset-0 z-40 grid place-items-center bg-white/80 text-center"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: [0, 1, 0.92, 0] }}
-              transition={{ duration: 0.95 }}
-            >
-              <motion.div animate={{ scale: [0.5, 1.2, 1] }} className="rounded-[32px] bg-yellow-100 px-8 py-6 shadow-soft">
-                <div className="text-6xl">🍬</div>
-                <p className="mt-2 text-2xl font-black text-yellow-900">{pokemon.nameEn} evolves!</p>
-              </motion.div>
-            </motion.div>
-          )}
-        </div>
-        <div className="space-y-4">
-          <div className={`rounded-[28px] border-2 p-5 ${typeClass[getPrimaryType(pokemon)]}`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-lg font-black">{pokemon.nameZh}</p>
-                <h1 className="text-4xl font-black text-slate-900">{pokemon.nameEn}</h1>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {getPokemonTypes(pokemon).map((type) => (
-                  <span key={type} className="rounded-full bg-white px-3 py-1 text-sm font-black">
-                    {typeLabel[type]} · {typeZhLabel[type]}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <p className="mt-4 text-lg font-bold leading-relaxed text-slate-700">{pokemon.storyZh}</p>
-            <div className="mt-3 rounded-2xl bg-white/70 px-3 py-2 text-sm font-black text-slate-600">
-              <p>{stageLabel(pokemon)} · Evolution: {pokemon.evolutionLine.map(idToName).join(" → ")}</p>
-            </div>
-          </div>
-
-          <LearningList
-            title="Words"
-            items={pokemon.words.map((word) => ({
-              id: word.word,
-              label: word.word,
-              sublabel: word.meaning,
-              icon: iconForText(word.word, pokemon.type),
-              effect: effectForText(word.word, pokemon)
-            }))}
-            onPlay={(item) => triggerEffect(item.effect, item.label, item.label)}
-          />
-          <LearningList
-            title="Sentences"
-            items={pokemon.sentences.map((sentence) => ({
-              id: sentence,
-              label: sentence,
-              sublabel: sentenceHint(sentence),
-              icon: iconForText(sentence, pokemon.type),
-              effect: effectForText(sentence, pokemon)
-            }))}
-            onPlay={(item) => triggerEffect(item.effect, item.label, item.label)}
-          />
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <button
-              className="big-button bg-sky-500 text-white"
-              onClick={() => {
-                playPokemonSound(pokemon);
-                onQuiz();
-              }}
-              type="button"
-            >
-              Play Quiz
-            </button>
-            <button
-              className={`big-button ${quizPassed && !completed ? "bg-emerald-500 text-white" : "bg-white text-slate-500"}`}
-              disabled={!quizPassed || completed}
-              onClick={() => {
-                playRewardSound();
-                onComplete();
-              }}
-              type="button"
-            >
-              {completed ? "Completed" : quizPassed ? "+1 Star · auto Candy" : "Finish Quiz First"}
-            </button>
-          </div>
-
-          {evolutionReady && evolutionOptions.length > 0 && (
-            <section className="rounded-[28px] border-2 border-yellow-200 bg-yellow-100 p-4 shadow-soft">
-              <p className="text-sm font-black uppercase tracking-[0.12em] text-yellow-700">Ready to evolve</p>
-              <h2 className="mt-1 text-xl font-black text-slate-900">选择进化方向</h2>
-              <p className="font-bold text-yellow-800">Use {pokemon.stage === 1 ? 2 : 3} Candy. Tap one evolved Pokémon.</p>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                {evolutionOptions.map((targetPokemon) => (
-                  <motion.button
-                    key={targetPokemon.id}
-                    className="rounded-3xl bg-white p-4 text-left shadow transition active:scale-[0.98]"
-                    onClick={() => handleEvolve(targetPokemon)}
-                    type="button"
-                    animate={{ boxShadow: ["0 0 0 rgba(250,204,21,0)", "0 0 24px rgba(250,204,21,0.55)", "0 0 0 rgba(250,204,21,0)"] }}
-                    transition={{ duration: 1.4, repeat: Infinity }}
-                  >
-                    <div className="grid gap-3">
-                      <div className="mx-auto w-full max-w-[190px] overflow-hidden rounded-[28px] bg-yellow-50">
-                        <PokemonPortrait pokemon={targetPokemon} />
-                      </div>
-                      <div>
-                        <p className="text-lg font-black text-slate-900">{targetPokemon.nameEn}</p>
-                        <p className="text-sm font-bold text-slate-500">{targetPokemon.nameZh}</p>
-                        <p className="mt-1 text-xs font-black uppercase tracking-[0.08em] text-yellow-700">Tap to evolve</p>
-                      </div>
-                    </div>
-                  </motion.button>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-      </section>
-    </PageShell>
-  );
-}
-
-type LearningItem = {
-  id: string;
-  label: string;
-  sublabel: string;
-  icon: string;
-  effect: string;
-};
-
-function LearningList({ title, items, onPlay }: { title: string; items: LearningItem[]; onPlay: (item: LearningItem) => void }) {
-  return (
-    <section className="rounded-[28px] bg-white p-4 shadow-soft">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-black text-slate-900">{title}</h2>
-        <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-black text-sky-700">Tap to move</span>
+    <div className={`character ${tone}`}>
+      <span>{name.slice(0, 1)}</span>
+      <div>
+        <strong>{name}</strong>
+        <small>{text}</small>
       </div>
-      <div className="mt-3 grid gap-3">
-        {items.map((item) => (
-          <button
-            key={item.id}
-            className="group flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-left transition hover:bg-sky-50 active:scale-[0.99]"
-            onClick={() => onPlay(item)}
-            type="button"
-          >
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white text-2xl shadow-sm transition group-active:scale-110">
-              {item.icon}
-            </span>
-            <span className="min-w-0">
-              <span className="block text-xl font-black leading-tight text-slate-800">{item.label}</span>
-              <span className="mt-1 block text-sm font-bold text-slate-500">{item.sublabel}</span>
-            </span>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-type QuizItem = {
-  question: string;
-  options: string[];
-  answer: string;
-};
-
-function QuizPage({
-  pokemon,
-  progress,
-  onPass,
-  onDone
-}: {
-  pokemon: Pokemon;
-  progress: UserProgress;
-  onPass: (correct: number, total: number) => void;
-  onDone: () => void;
-}) {
-  const [index, setIndex] = useState(0);
-  const [feedback, setFeedback] = useState<"great" | "try" | undefined>();
-  const [correct, setCorrect] = useState(0);
-  const quizSet = useMemo(() => buildQuizSet(pokemon), [pokemon.id]);
-  const quiz = quizSet[index];
-  const completed = index >= quizSet.length;
-  const alreadyPassed = progress.quizPassedPokemonIds.includes(pokemon.id);
-
-  const choose = (option: string) => {
-    if (quiz && option === quiz.answer) {
-      playPokemonSound(pokemon);
-      setFeedback("great");
-      setCorrect((value) => value + 1);
-      window.setTimeout(() => {
-        setFeedback(undefined);
-        setIndex((value) => value + 1);
-      }, 650);
-    } else {
-      playWrongSound();
-      setFeedback("try");
-      window.setTimeout(() => setFeedback(undefined), 700);
-    }
-  };
-
-  useEffect(() => {
-    if (completed && !alreadyPassed) onPass(correct, quizSet.length);
-  }, [alreadyPassed, completed, correct, onPass, quizSet.length]);
-
-  if (completed) {
-    return (
-      <PageShell>
-        <section className="mx-auto max-w-md rounded-[32px] bg-white p-6 text-center shadow-soft">
-          <div className="text-6xl">⭐</div>
-          <h1 className="mt-3 text-3xl font-black text-slate-900">Great!</h1>
-          <p className="mt-2 text-lg font-bold text-slate-600">{pokemon.nameEn} quiz is done. Claim a Star. Stars turn into Candy automatically.</p>
-          <button className="big-button mt-5 w-full bg-emerald-500 text-white" onClick={onDone} type="button">
-            Back to Learn
-          </button>
-        </section>
-      </PageShell>
-    );
-  }
-
-  return (
-    <PageShell>
-      <section className="mx-auto max-w-2xl rounded-[32px] bg-white p-5 shadow-soft">
-        <div className="flex items-center gap-3">
-          <div className="h-16 w-16 shrink-0 rounded-2xl bg-sky-100 p-2">
-            <PokemonPortrait pokemon={pokemon} />
-          </div>
-          <div>
-            <p className="text-sm font-black text-sky-700">Quiz {index + 1}/{quizSet.length}</p>
-            <h1 className="text-2xl font-black text-slate-900">{quiz.question}</h1>
-          </div>
-        </div>
-        <div className="mt-5 grid gap-3">
-          {quiz.options.map((option) => (
-            <button key={option} className="big-button bg-slate-50 text-slate-800" onClick={() => choose(option)} type="button">
-              {option}
-            </button>
-          ))}
-        </div>
-        <div className="mt-5 min-h-9 text-center text-xl font-black">
-          {feedback === "great" && <span className="text-emerald-600">Great! +1</span>}
-          {feedback === "try" && <span className="text-orange-600">Try again! Look at {pokemon.nameEn}.</span>}
-        </div>
-      </section>
-    </PageShell>
-  );
-}
-
-function DexPage({ progress, onOpen }: { progress: UserProgress; onOpen: (id: string) => void }) {
-  return (
-    <PageShell>
-      <Header eyebrow="Pokémon Dex" title="图鉴收集" subtitle="彩色代表已解锁，金色边框代表已掌握。" />
-      <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        {pokemonData.map((pokemon) => (
-          <PokemonCard key={pokemon.id} pokemon={pokemon} progress={progress} onClick={() => onOpen(pokemon.id)} />
-        ))}
-      </section>
-    </PageShell>
-  );
-}
-
-function ReviewPage({
-  progress,
-  onOpen,
-  onReviewComplete
-}: {
-  progress: UserProgress;
-  onOpen: (id: string) => void;
-  onReviewComplete: (ids: string[]) => void;
-}) {
-  const reviewPool = pokemonData.filter(
-    (pokemon) => progress.learnedPokemonIds.includes(pokemon.id) || (pokemon.stage > 1 && progress.unlockedPokemonIds.includes(pokemon.id))
-  );
-  const reviewSet = useMemo(() => shuffleList(reviewPool).slice(0, 3), [reviewPool.map((pokemon) => pokemon.id).join("|")]);
-
-  return (
-    <PageShell>
-      <Header eyebrow="Review" title="轻松复习" subtitle="复习包含已学原始宝可梦和已经进化出的宝可梦。完成后获得星星，自动兑换糖果。" />
-      {reviewPool.length === 0 ? (
-        <EmptyState title="还没有可复习内容" text="先完成今日冒险里的任意一只宝可梦吧。" />
-      ) : (
-        <>
-          <section className="grid gap-4 sm:grid-cols-3">
-            {reviewSet.map((pokemon) => (
-              <PokemonCard key={pokemon.id} pokemon={pokemon} progress={progress} onClick={() => onOpen(pokemon.id)} cta="Quiz" />
-            ))}
-          </section>
-          <button
-            className="big-button w-full bg-yellow-400 text-yellow-950"
-            onClick={() => onReviewComplete(reviewSet.map((pokemon) => pokemon.id))}
-            type="button"
-          >
-            Review Done · +1 Star · auto Candy
-          </button>
-        </>
-      )}
-    </PageShell>
-  );
-}
-
-function RewardsPage({ progress, onOpenDex }: { progress: UserProgress; onOpenDex: () => void }) {
-  return (
-    <PageShell>
-      <Header eyebrow="Rewards" title="奖励背包" subtitle="星星来自学习和复习，每 3 颗星星会自动换成 1 颗糖果。" />
-      <section className="grid grid-cols-2 gap-4">
-        <Reward value={progress.stars} label="Stars" icon="⭐" />
-        <Reward value={progress.candies} label="Candy" icon="🍬" />
-        <Reward value={progress.streakDays} label="Streak Days" icon="🔥" />
-        <Reward value={progress.unlockedPokemonIds.length} label="Unlocked" icon="📘" />
-      </section>
-      <section className="rounded-[28px] bg-white p-5 shadow-soft">
-        <h2 className="text-2xl font-black text-slate-900">Badges</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <Badge active={progress.streakDays >= 3} label="3 Day Explorer" />
-          <Badge active={progress.streakDays >= 7} label="7 Day Hero" />
-          <Badge active={progress.masteredPokemonIds.length >= 3} label="Word Master" />
-        </div>
-        <button className="big-button mt-5 w-full bg-sky-500 text-white" onClick={onOpenDex} type="button">
-          Open Dex
-        </button>
-      </section>
-    </PageShell>
-  );
-}
-
-function PokemonCard({
-  pokemon,
-  progress,
-  onClick,
-  cta = "Open"
-}: {
-  pokemon: Pokemon;
-  progress: UserProgress;
-  onClick: () => void;
-  cta?: string;
-}) {
-  const status = getPokemonStatus(pokemon.id, progress);
-  const locked = status === "locked";
-  const mastered = status === "mastered";
-  const completed = progress.completedTodayPokemonIds.includes(pokemon.id);
-
-  return (
-    <button
-      className={`rounded-[28px] border-2 bg-white p-3 text-left shadow-soft transition active:scale-[0.98] ${
-        mastered ? "border-yellow-300" : locked ? "border-slate-200 opacity-70" : "border-white"
-      }`}
-      onClick={() => {
-        if (!locked) playPokemonSound(pokemon);
-        onClick();
-      }}
-      type="button"
-    >
-      <PokemonPortrait pokemon={pokemon} locked={locked} />
-      <div className="mt-3 flex items-start justify-between gap-2">
-        <div>
-          <p className="text-sm font-black text-slate-500">{locked ? "???" : pokemon.nameZh}</p>
-          <h3 className="text-xl font-black text-slate-900">{locked ? "Locked" : pokemon.nameEn}</h3>
-          <p className="mt-1 text-xs font-black uppercase text-slate-400">{status}{completed ? " · today done" : ""}</p>
-          {!locked && (
-            <>
-              <p className="mt-1 text-sm font-black text-slate-600">{stageLabel(pokemon)}</p>
-              <p className="mt-1 line-clamp-2 text-xs font-bold text-slate-400">{pokemon.evolutionLine.map(idToName).join(" → ")}</p>
-            </>
-          )}
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          {locked ? (
-            <span className={`rounded-full border px-2 py-1 text-xs font-black ${typeClass[getPrimaryType(pokemon)]}`}>?</span>
-          ) : (
-            <>
-              <span className={`rounded-full border px-2 py-1 text-xs font-black ${typeClass[getPrimaryType(pokemon)]}`}>{cta}</span>
-              {getPokemonTypes(pokemon).map((type) => (
-                <span key={type} className={`rounded-full border px-2 py-1 text-xs font-black ${typeClass[type]}`}>
-                  {typeLabel[type]}
-                </span>
-              ))}
-            </>
-          )}
-        </div>
-      </div>
-    </button>
-  );
-}
-
-function Header({ eyebrow, title, subtitle }: { eyebrow: string; title: string; subtitle: string }) {
-  return (
-    <section>
-      <p className="text-sm font-black uppercase tracking-[0.14em] text-sky-700">{eyebrow}</p>
-      <h1 className="mt-2 text-3xl font-black text-slate-900 sm:text-5xl">{title}</h1>
-      <p className="mt-2 max-w-2xl text-lg font-bold text-slate-600">{subtitle}</p>
-    </section>
-  );
-}
-
-function PageShell({ children }: { children: ReactNode }) {
-  return (
-    <motion.div className="space-y-5" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
-      {children}
-    </motion.div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-3xl bg-white p-3 text-center shadow-soft">
-      <p className="text-xs font-black uppercase text-slate-400">{label}</p>
-      <p className="mt-1 text-xl font-black text-slate-900">{value}</p>
     </div>
   );
 }
 
-function Reward({ icon, label, value }: { icon: string; label: string; value: number }) {
+function ReportStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[28px] bg-white p-5 text-center shadow-soft">
-      <div className="text-5xl">{icon}</div>
-      <p className="mt-3 text-4xl font-black text-slate-900">{value}</p>
-      <p className="font-black text-slate-500">{label}</p>
+    <div className="report-stat">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
 
-function Badge({ active, label }: { active: boolean; label: string }) {
-  return (
-    <div className={`rounded-3xl border-2 p-4 text-center font-black ${active ? "border-yellow-300 bg-yellow-50 text-yellow-800" : "border-slate-200 bg-slate-50 text-slate-400"}`}>
-      <div className="text-3xl">{active ? "🏅" : "🔒"}</div>
-      <p className="mt-2">{label}</p>
-    </div>
-  );
+function buildWeakItems(events: AnswerEvent[]) {
+  const labels: Record<ErrorType, { label: string; reason: string; taskId: TaskId }> = {
+    mode: { label: "模式未切换", reason: "同一个字母在两个世界里声音不同", taskId: "identity" },
+    symbol: { label: "字母/音节识别", reason: "m 和 a 的身份还需要多听", taskId: "identity" },
+    blend: { label: "声母韵母拼合", reason: "拼合时需要慢慢靠近再合成", taskId: "train" },
+    tone: { label: "声调辨听", reason: "轨迹和音高变化还没稳定对应", taskId: "tone" },
+    operation: { label: "操作未完成", reason: "拖动或点击步骤需要更清楚", taskId: "train" }
+  };
+  const counts = events.reduce<Record<string, number>>((acc, event) => {
+    if (event.errorType) acc[event.errorType] = (acc[event.errorType] ?? 0) + 1;
+    return acc;
+  }, {});
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([type]) => ({ type: type as ErrorType, ...labels[type as ErrorType] }));
 }
 
-function EmptyState({ title, text }: { title: string; text: string }) {
-  return (
-    <section className="rounded-[28px] bg-white p-8 text-center shadow-soft">
-      <div className="text-5xl">🧭</div>
-      <h2 className="mt-3 text-2xl font-black text-slate-900">{title}</h2>
-      <p className="mt-2 font-bold text-slate-500">{text}</p>
-    </section>
-  );
+function makeEvent(taskId: TaskId, questionId: string, correct: boolean, attempts: number, errorType: ErrorType | undefined, startedAt: number): AnswerEvent {
+  return {
+    id: crypto.randomUUID(),
+    taskId,
+    questionId,
+    correct,
+    attempts,
+    errorType,
+    elapsedMs: Date.now() - startedAt,
+    at: new Date().toISOString()
+  };
 }
 
-function idToName(id: string) {
-  return pokemonData.find((pokemon) => pokemon.id === id)?.nameEn ?? id;
-}
+type SoundEffect =
+  | "tap"
+  | "start"
+  | "listen"
+  | "correct"
+  | "retry"
+  | "reward"
+  | "modeEnglish"
+  | "modePinyin"
+  | "car"
+  | "train"
+  | "tone";
 
-function stageLabel(pokemon: Pokemon) {
-  if (pokemon.evolutionLine.length === 1) return "原始形态 · 无进化";
-  if (pokemon.stage === 1) return "原始形态";
-  if (getEvolutionOptionIds(pokemon.id).length === 0) return "最终进化";
-  return `第 ${pokemon.stage} 阶进化`;
-}
-
-function iconForText(text: string, type: Pokemon["type"]) {
-  const value = text.toLowerCase();
-  if (value.includes("fire") || value.includes("hot")) return "🔥";
-  if (value.includes("spark") || value.includes("thunder")) return "⚡";
-  if (value.includes("water") || value.includes("splash") || value.includes("wave") || value.includes("swim")) return "💦";
-  if (value.includes("tail")) return "✨";
-  if (value.includes("shell")) return "🐚";
-  if (value.includes("wing") || value.includes("fly")) return "🪽";
-  if (value.includes("dragon")) return "🐉";
-  if (value.includes("sing") || value.includes("song")) return "🎵";
-  if (value.includes("coin")) return "🪙";
-  if (value.includes("arm") || value.includes("muscle") || value.includes("power") || value.includes("lift")) return "💪";
-  if (value.includes("ghost") || value.includes("shadow") || value.includes("hide") || value.includes("float")) return "👻";
-  if (value.includes("pearl") || value.includes("glow")) return "✨";
-  if (value.includes("mind") || value.includes("mystery")) return "🌀";
-  if (value.includes("ice") || value.includes("cold") || value.includes("snow")) return "❄️";
-  if (value.includes("rock") || value.includes("stone") || value.includes("mountain")) return "🪨";
-  if (value.includes("ground")) return "🟫";
-  if (value.includes("steel") || value.includes("metal") || value.includes("hard")) return "✦";
-  if (value.includes("moon") || value.includes("night") || value.includes("dark")) return "🌙";
-  if (value.includes("ribbon") || value.includes("gentle") || value.includes("luck") || value.includes("peace")) return "✨";
-  if (value.includes("dog") || value.includes("bark") || value.includes("brave") || value.includes("hero") || value.includes("knight")) return "⭐";
-  if (value.includes("fish") || value.includes("fin")) return "🐟";
-  if (value.includes("egg")) return "🥚";
-  if (value.includes("dance") || value.includes("graceful")) return "💫";
-  if (value.includes("claw")) return "⚡";
-  if (value.includes("seed")) return "🌱";
-  if (value.includes("leaf") || value.includes("green")) return "🍃";
-  if (value.includes("flower") || value.includes("bud") || value.includes("plant") || value.includes("grow")) return "🌸";
-  if (value.includes("sun")) return "☀️";
-  if (value.includes("forest")) return "🌳";
-  if (value.includes("cannon")) return "💧";
-  if (value.includes("big") || value.includes("strong")) return "💪";
-  if (value.includes("blue")) return "🔵";
-  return type === "fire" ? "🔥" : type === "water" ? "💧" : "🌿";
-}
-
-function effectForText(text: string, pokemon: Pokemon) {
-  const value = text.toLowerCase();
-  if (value.includes("fire") || value.includes("hot")) return pokemon.interactions.find((item) => item.includes("fire") || item.includes("glow")) ?? "tap-mouth-fire";
-  if (value.includes("spark") || value.includes("thunder") || value.includes("yellow")) return pokemon.interactions.find((item) => item.includes("spark") || item.includes("tail")) ?? pokemon.interactions[0];
-  if (value.includes("water") || value.includes("splash")) return pokemon.interactions.find((item) => item.includes("water") || item.includes("splash") || item.includes("cannon")) ?? "tap-mouth-water";
-  if (value.includes("tail")) return pokemon.interactions.find((item) => item.includes("tail")) ?? pokemon.interactions[0];
-  if (value.includes("shell")) return pokemon.interactions.find((item) => item.includes("shell")) ?? pokemon.interactions[0];
-  if (value.includes("wing") || value.includes("fly")) return pokemon.interactions.find((item) => item.includes("wing") || item.includes("fly")) ?? "tap-wing-fly";
-  if (value.includes("claw") || value.includes("strong") || value.includes("angry")) return pokemon.interactions.find((item) => item.includes("claw") || item.includes("body")) ?? pokemon.interactions[0];
-  if (value.includes("sing") || value.includes("song") || value.includes("round") || value.includes("sleep")) return pokemon.interactions.find((item) => item.includes("song") || item.includes("body")) ?? pokemon.interactions[0];
-  if (value.includes("cat") || value.includes("coin") || value.includes("meow") || value.includes("walk") || value.includes("quiet")) return pokemon.interactions.find((item) => item.includes("coin") || item.includes("body")) ?? pokemon.interactions[0];
-  if (value.includes("arm") || value.includes("muscle") || value.includes("power") || value.includes("lift") || value.includes("heavy") || value.includes("hand")) return pokemon.interactions.find((item) => item.includes("arm") || item.includes("body")) ?? pokemon.interactions[0];
-  if (value.includes("ghost") || value.includes("shadow") || value.includes("float") || value.includes("hide") || value.includes("purple")) return pokemon.interactions.find((item) => item.includes("ghost") || item.includes("body")) ?? pokemon.interactions[0];
-  if (value.includes("dragon") || value.includes("pearl") || value.includes("glow") || value.includes("long") || value.includes("kind") || value.includes("far")) return pokemon.interactions.find((item) => item.includes("dragon") || item.includes("wing")) ?? pokemon.interactions[0];
-  if (value.includes("mind") || value.includes("mystery") || value.includes("smart") || value.includes("magic") || value.includes("spoon") || value.includes("focus") || value.includes("feel")) return pokemon.interactions.find((item) => item.includes("psychic")) ?? pokemon.interactions[0];
-  if (value.includes("ice") || value.includes("cold") || value.includes("snow")) return pokemon.interactions.find((item) => item.includes("ice")) ?? pokemon.interactions[0];
-  if (value.includes("steel") || value.includes("metal") || value.includes("hard")) return pokemon.interactions.find((item) => item.includes("steel")) ?? pokemon.interactions[0];
-  if (value.includes("rock") || value.includes("ground") || value.includes("mountain")) return pokemon.interactions.find((item) => item.includes("rock") || item.includes("ground")) ?? pokemon.interactions[0];
-  if (value.includes("moon") || value.includes("night") || value.includes("dark")) return pokemon.interactions.find((item) => item.includes("dark") || item.includes("moon")) ?? pokemon.interactions[0];
-  if (value.includes("ribbon") || value.includes("gentle") || value.includes("luck") || value.includes("peace")) return pokemon.interactions.find((item) => item.includes("ribbon")) ?? pokemon.interactions[0];
-  if (value.includes("seed") || value.includes("leaf") || value.includes("green") || value.includes("plant") || value.includes("grow")) {
-    return pokemon.interactions.find((item) => item.includes("seed") || item.includes("leaf") || item.includes("bud") || item.includes("flower")) ?? pokemon.interactions[0];
-  }
-  if (value.includes("flower") || value.includes("bud") || value.includes("sun") || value.includes("forest")) return pokemon.interactions.find((item) => item.includes("flower") || item.includes("bud") || item.includes("sun")) ?? pokemon.interactions[0];
-  return pokemon.interactions[0];
-}
-
-function sentenceHint(sentence: string) {
-  if (sentence.includes("see")) return "Look and say it";
-  if (sentence.includes("has") || sentence.includes("It has")) return "Find it on the Pokémon";
-  if (sentence.includes("can")) return "Watch the action";
-  if (sentence.includes("is")) return "Say the feeling or color";
-  return "Tap to hear and move";
-}
-
-function buildQuizSet(pokemon: Pokemon): QuizItem[] {
-  const wordQuestions: QuizItem[] = pokemon.words.map((word) => ({
-    question: `Which word means ${word.meaning}？`,
-    answer: word.word,
-    options: buildOptions(word.word, pokemon.words.map((item) => item.word))
-  }));
-  const sentenceQuestions: QuizItem[] = pokemon.sentences.map((sentence) => {
-    const answer = pickSentenceAnswer(sentence, pokemon);
-    return {
-      question: `Fill in: ${sentence.replace(answer, "____")}`,
-      answer,
-      options: buildOptions(answer, pokemon.words.map((item) => item.word))
-    };
-  });
-  const providedQuestions: QuizItem[] = pokemon.quizzes.map((quiz) => ({
-    ...quiz,
-    options: shuffleList(quiz.options)
-  }));
-
-  return shuffleList([...providedQuestions, ...wordQuestions, ...sentenceQuestions]).slice(0, 3);
-}
-
-function pickSentenceAnswer(sentence: string, pokemon: Pokemon) {
-  const lowerSentence = sentence.toLowerCase();
-  return pokemon.words.find((word) => lowerSentence.includes(word.word.toLowerCase()))?.word ?? pokemon.nameEn;
-}
-
-function buildOptions(answer: string, localWords: string[]) {
-  const optionPool = Array.from(
-    new Set([
-      ...localWords,
-      ...pokemonData.flatMap((pokemon) => pokemon.words.map((word) => word.word)),
-      "run",
-      "jump",
-      "sleep",
-      "friend",
-      "star"
-    ])
-  ).filter((option) => option !== answer);
-  return shuffleList([answer, ...shuffleList(optionPool).slice(0, 2)]);
-}
-
-function shuffleList<T>(items: T[]) {
-  return items
-    .map((item) => ({ item, sort: Math.random() }))
-    .sort((a, b) => a.sort - b.sort)
-    .map(({ item }) => item);
-}
-
-function playPokemonSound(pokemon: Pokemon) {
-  playTypeSound(getPrimaryType(pokemon));
-}
-
-function playUiClickSound() {
-  playTone([440, 660], 0.09, "triangle", 0.04);
-}
-
-function playRewardSound() {
-  playTone([523, 659, 784, 1046], 0.08, "triangle", 0.05);
-}
-
-function playWrongSound() {
-  playTone([220, 180], 0.12, "sawtooth", 0.035);
-}
-
-function playTypeSound(type: Pokemon["type"]) {
-  if (type === "water") return playNoise(0.18, 620, 0.055);
-  if (type === "fire") return playNoise(0.16, 240, 0.05);
-  if (type === "electric") return playTone([900, 1300, 700], 0.045, "square", 0.04);
-  if (type === "grass") return playTone([520, 760, 980], 0.07, "sine", 0.035);
-  if (type === "normal") return playTone([360, 520], 0.08, "triangle", 0.035);
-  if (type === "fighting") return playTone([150, 95], 0.11, "sine", 0.06);
-  if (type === "ghost") return playTone([420, 300, 240], 0.14, "sine", 0.03);
-  if (type === "dragon") return playTone([180, 360, 720], 0.11, "sawtooth", 0.035);
-  if (type === "poison") return playTone([260, 210, 300], 0.08, "sawtooth", 0.025);
-  if (type === "flying") return playNoise(0.14, 1200, 0.028);
-  if (type === "psychic") return playTone([660, 990, 1320, 880], 0.07, "sine", 0.035);
-  if (type === "fairy") return playTone([784, 988, 1175], 0.08, "triangle", 0.035);
-  if (type === "rock") return playNoise(0.16, 180, 0.055);
-  if (type === "ground") return playTone([120, 90, 150], 0.1, "sine", 0.055);
-  if (type === "steel") return playTone([740, 520, 880], 0.06, "triangle", 0.045);
-  if (type === "dark") return playTone([220, 165, 110], 0.12, "sawtooth", 0.025);
-  if (type === "ice") return playTone([1046, 1318, 1568], 0.07, "sine", 0.03);
-}
+let audioContext: AudioContext | undefined;
 
 function getAudioContext() {
-  const AudioContextCtor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AudioContextCtor) return null;
-  const globalWindow = window as unknown as { __nuannuanAudioContext?: AudioContext };
-  globalWindow.__nuannuanAudioContext ??= new AudioContextCtor();
-  return globalWindow.__nuannuanAudioContext;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return undefined;
+  audioContext ??= new AudioContextClass();
+  return audioContext;
 }
 
-function playTone(frequencies: number[], stepDuration: number, wave: OscillatorType, volume: number) {
+function playSoundEffect(effect: SoundEffect) {
   const ctx = getAudioContext();
   if (!ctx) return;
-  const now = ctx.currentTime;
-  frequencies.forEach((frequency, index) => {
-    const osc = ctx.createOscillator();
+
+  if (ctx.state === "suspended") {
+    ctx.resume();
+  }
+
+  const patterns: Record<SoundEffect, Array<[number, number, number]>> = {
+    tap: [[520, 0, 0.055]],
+    start: [[392, 0, 0.08], [523.25, 0.08, 0.11], [659.25, 0.18, 0.14]],
+    listen: [[659.25, 0, 0.08], [783.99, 0.09, 0.08]],
+    correct: [[523.25, 0, 0.08], [659.25, 0.08, 0.1], [783.99, 0.17, 0.12]],
+    retry: [[330, 0, 0.08], [293.66, 0.09, 0.09]],
+    reward: [[523.25, 0, 0.08], [659.25, 0.08, 0.08], [783.99, 0.16, 0.08], [1046.5, 0.25, 0.16]],
+    modeEnglish: [[392, 0, 0.08], [587.33, 0.08, 0.12]],
+    modePinyin: [[440, 0, 0.08], [659.25, 0.08, 0.12]],
+    car: [[220, 0, 0.06], [330, 0.06, 0.06]],
+    train: [[196, 0, 0.08], [246.94, 0.08, 0.08], [392, 0.18, 0.16]],
+    tone: [[440, 0, 0.1], [554.37, 0.09, 0.1], [659.25, 0.18, 0.12]]
+  };
+
+  patterns[effect].forEach(([frequency, delay, duration], index) => {
+    const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = wave;
-    osc.frequency.setValueAtTime(frequency, now + index * stepDuration);
-    gain.gain.setValueAtTime(0, now + index * stepDuration);
-    gain.gain.linearRampToValueAtTime(volume, now + index * stepDuration + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + (index + 1) * stepDuration);
-    osc.connect(gain);
+    oscillator.type = effect === "retry" ? "triangle" : "sine";
+    oscillator.frequency.setValueAtTime(frequency, ctx.currentTime + delay);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime + delay);
+    gain.gain.exponentialRampToValueAtTime(index === 0 ? 0.13 : 0.1, ctx.currentTime + delay + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + delay + duration);
+    oscillator.connect(gain);
     gain.connect(ctx.destination);
-    osc.start(now + index * stepDuration);
-    osc.stop(now + (index + 1) * stepDuration + 0.02);
+    oscillator.start(ctx.currentTime + delay);
+    oscillator.stop(ctx.currentTime + delay + duration + 0.02);
   });
-}
-
-function playNoise(duration: number, filterFrequency: number, volume: number) {
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  const buffer = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * duration)), ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
-  const source = ctx.createBufferSource();
-  const filter = ctx.createBiquadFilter();
-  const gain = ctx.createGain();
-  filter.type = "bandpass";
-  filter.frequency.value = filterFrequency;
-  gain.gain.setValueAtTime(volume, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-  source.buffer = buffer;
-  source.connect(filter);
-  filter.connect(gain);
-  gain.connect(ctx.destination);
-  source.start();
-  source.stop(ctx.currentTime + duration);
 }
 
 function speak(text: string) {
   if (!("speechSynthesis" in window)) return;
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "en-US";
-  utterance.rate = 0.82;
+  utterance.rate = 0.86;
+  utterance.pitch = 1.08;
   window.speechSynthesis.speak(utterance);
 }

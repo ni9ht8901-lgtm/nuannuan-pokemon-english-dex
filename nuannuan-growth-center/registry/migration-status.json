@@ -1,0 +1,45 @@
+[
+  {
+    "projectId": "字母变身局",
+    "name": "字母变身局",
+    "status": "discovered",
+    "steps": {
+      "discovered": true,
+      "analyzed": true,
+      "backedUp": false,
+      "integrated": false,
+      "deployed": false
+    },
+    "blockers": [
+      "Supabase credentials are required for full cloud sync."
+    ]
+  },
+  {
+    "projectId": "字母变身局-standalone",
+    "name": "字母变身局 Standalone",
+    "status": "discovered",
+    "steps": {
+      "discovered": true,
+      "analyzed": true,
+      "backedUp": false,
+      "integrated": false,
+      "deployed": false
+    },
+    "blockers": [
+      "Supabase credentials are required for full cloud sync."
+    ]
+  },
+  {
+    "projectId": "linnea-pet-shop-book",
+    "name": "linnea pet shop book",
+    "status": "archive_indexed",
+    "steps": {
+      "discovered": true,
+      "analyzed": true,
+      "backedUp": false,
+      "integrated": false,
+      "deployed": false
+    },
+    "blockers": []
+  }
+]

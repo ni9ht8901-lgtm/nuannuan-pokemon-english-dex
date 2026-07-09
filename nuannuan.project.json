@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0",
+  "projectId": "letter-transform-station",
+  "name": "字母变身局",
+  "type": "pwa",
+  "description": "帮助暖暖在 English Mode 与拼音模式之间清晰切换的儿童教育 PWA。",
+  "version": "1.1.0",
+  "status": "active",
+  "cover": "public/visual-refs/home.png",
+  "url": "",
+  "repository": "",
+  "ageRange": "6+",
+  "goals": ["拼音识别", "英语与拼音模式区分", "发音练习", "家长报告"],
+  "progressConfig": {
+    "type": "task_completion",
+    "totalTasks": 3,
+    "metrics": ["stars", "stickers", "answerEvents", "recordings"]
+  },
+  "createdAt": "2026-06-29",
+  "updatedAt": "2026-07-09"
+}
