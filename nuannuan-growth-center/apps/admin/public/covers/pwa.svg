@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="320" viewBox="0 0 720 320" role="img" aria-label="PWA project cover">
+  <rect width="720" height="320" fill="#e6f6ff"/>
+  <rect x="60" y="44" width="600" height="232" rx="16" fill="#ffffff" stroke="#9fb3c8" stroke-width="4"/>
+  <rect x="92" y="78" width="248" height="42" rx="8" fill="#2680c2"/>
+  <rect x="92" y="146" width="168" height="24" rx="6" fill="#bcccdc"/>
+  <rect x="92" y="190" width="260" height="24" rx="6" fill="#d9e2ec"/>
+  <rect x="420" y="82" width="156" height="156" rx="32" fill="#2f9e44"/>
+  <circle cx="498" cy="160" r="46" fill="#fffbea"/>
+  <path d="M480 162h36m-18-18v36" stroke="#2f9e44" stroke-width="12" stroke-linecap="round"/>
+</svg>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { registerSW } from "virtual:pwa-register";
+import { growthClient, mapLetterProgressToGrowthProgress } from "./lib/growthClient";
 
 declare global {
   interface Window {
@@ -53,6 +54,7 @@ type Progress = {
 };
 
 const STORAGE_KEY = "letter-transform-station-progress-v1";
+const MIGRATION_MARKER_KEY = "letter-transform-station-growth-migration-v1";
 
 const defaultProgress: Progress = {
   childName: "暖暖",
@@ -159,9 +161,25 @@ export function App() {
     });
   }, []);
 
+  useEffect(() => {
+    void growthClient.startSession({ entryView: view });
+    void growthClient.trackEvent("app_opened", { view });
+    migrateLegacyProgressOnce(progress);
+    const flushQueue = () => {
+      void growthClient.flushOfflineQueue();
+    };
+    flushQueue();
+    window.addEventListener("online", flushQueue);
+    return () => {
+      window.removeEventListener("online", flushQueue);
+      void growthClient.endSession({ exitView: view });
+    };
+  }, []);
+
   const save = (next: Progress) => {
     setProgress(next);
     persistProgress(next);
+    void growthClient.updateProgress(mapLetterProgressToGrowthProgress(next));
   };
 
   const completeTask = (taskId: TaskId, event: AnswerEvent) => {
@@ -173,13 +191,28 @@ export function App() {
       ? [...progress.stickerIds, "sticker-switch-day1"]
       : progress.stickerIds;
     playSoundEffect(allDone ? "reward" : "correct");
-    save({
+    const nextProgress = {
       ...progress,
       events: [...progress.events, event],
       completedTaskIds,
       stickerIds,
       stars: Math.max(progress.stars, completedTaskIds.length)
+    };
+    save(nextProgress);
+    void growthClient.trackEvent("task_completed", {
+      taskId,
+      questionId: event.questionId,
+      correct: event.correct,
+      attempts: event.attempts,
+      errorType: event.errorType,
+      elapsedMs: event.elapsedMs
     });
+    if (allDone && !progress.stickerIds.includes("sticker-switch-day1")) {
+      void growthClient.unlockAchievement("sticker-switch-day1", {
+        name: "完成今日变身任务",
+        completedTaskIds
+      });
+    }
   };
 
   const nextTask = tasks.find((task) => !progress.completedTaskIds.includes(task.id)) ?? tasks[0];
@@ -241,6 +274,30 @@ function loadProgress(): Progress {
 function persistProgress(progress: Progress) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
   saveProgressToIndexedDB(progress);
+}
+
+function migrateLegacyProgressOnce(progress: Progress) {
+  if (typeof window === "undefined") return;
+  if (localStorage.getItem(MIGRATION_MARKER_KEY)) return;
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return;
+  let legacyData: unknown;
+  try {
+    legacyData = JSON.parse(raw);
+  } catch {
+    void growthClient.trackEvent("error_occurred", {
+      source: `localStorage:${STORAGE_KEY}`,
+      message: "Legacy progress JSON could not be parsed"
+    });
+    return;
+  }
+  void growthClient.migrateLegacyData({
+    source: `localStorage:${STORAGE_KEY}`,
+    legacyData,
+    progress: mapLetterProgressToGrowthProgress(progress)
+  }).then(() => {
+    localStorage.setItem(MIGRATION_MARKER_KEY, new Date().toISOString());
+  });
 }
 
 async function openLetterDB() {

@@ -7,7 +7,11 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "check:mvp": "node scripts/check-mvp.mjs"
+    "check:mvp": "node scripts/check-mvp.mjs",
+    "growth:discover": "node nuannuan-growth-center/scripts/discover-projects/discover.mjs --workspace . --output nuannuan-growth-center",
+    "growth:test": "npx tsc -p nuannuan-growth-center/packages/growth-sdk/tsconfig.json && node --test nuannuan-growth-center/tests/*.test.mjs",
+    "growth:admin:build": "npx tsc -p nuannuan-growth-center/apps/admin/tsconfig.json && npx vite build nuannuan-growth-center/apps/admin",
+    "growth:check": "npm run growth:test && npm run growth:admin:build"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",

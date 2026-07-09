@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="320" viewBox="0 0 720 320" role="img" aria-label="Picture book cover">
+  <rect width="720" height="320" fill="#fff4e6"/>
+  <path d="M160 70h180c34 0 62 28 62 62v132H222c-34 0-62-28-62-62V70Z" fill="#ffffff" stroke="#d9480f" stroke-width="4"/>
+  <path d="M560 70H380c-34 0-62 28-62 62v132h180c34 0 62-28 62-62V70Z" fill="#fff9db" stroke="#d9480f" stroke-width="4"/>
+  <circle cx="260" cy="156" r="42" fill="#f59f00"/>
+  <path d="M426 132h80M426 164h64M426 196h92" stroke="#8d2b0b" stroke-width="14" stroke-linecap="round"/>
+  <path d="M318 100v164" stroke="#f08c00" stroke-width="5"/>
+</svg>

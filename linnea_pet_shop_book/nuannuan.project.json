@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0",
+  "projectId": "linnea-pet-shop-where-is-dodo",
+  "name": "Linnea Pet Shop: Where Is Dodo?",
+  "type": "picture_book",
+  "description": "中英双语绘本，包含 PDF、源图片页和渲染页。",
+  "version": "1.0.0",
+  "status": "active",
+  "cover": "assets/cover.png",
+  "url": "Linnea_Pet_Shop_Where_Is_Dodo.pdf",
+  "repository": "",
+  "ageRange": "5+",
+  "goals": ["亲子阅读", "英语启蒙", "故事理解"],
+  "progressConfig": {
+    "type": "reading_progress",
+    "pageCount": 12
+  },
+  "createdAt": "2026-07-09",
+  "updatedAt": "2026-07-09"
+}

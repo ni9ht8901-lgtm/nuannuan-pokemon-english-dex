@@ -1,0 +1,17 @@
+{
+  "name": "nuannuan-growth-center",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/admin",
+    "packages/growth-sdk"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "discover": "node scripts/discover-projects/discover.mjs --workspace .. --output .",
+    "build:sdk": "tsc -p packages/growth-sdk/tsconfig.json",
+    "build:admin": "tsc -p apps/admin/tsconfig.json && vite build apps/admin",
+    "check": "npm run build:sdk && npm test && npm run build:admin"
+  }
+}
